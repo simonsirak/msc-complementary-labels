@@ -1,8 +1,6 @@
 import torch, torchvision
 #!pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
 import detectron2
-from detectron2.utils.logger import setup_logger
-setup_logger()
 
 # import some common libraries
 import numpy as np
@@ -141,7 +139,7 @@ class CustomDataset:
 
     # DEFAULT SOLVER CONFIG; OVERWRITE THIS FOR THE PARTICULAR DATASET/MODEL IN USE
     cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
-    cfg.SOLVER.MAX_ITER = 1 * int(round(len(base_dicts["train"]) / cfg.SOLVER.IMS_PER_BATCH))    # this will vary depending on the amount of labels since detectron2 removes unannotated images by default
+    cfg.SOLVER.MAX_ITER = 10 * int(round(len(base_dicts["train"]) / cfg.SOLVER.IMS_PER_BATCH))    # this will vary depending on the amount of labels since detectron2 removes unannotated images by default
     #cfg.SOLVER.STEPS = []        # do not decay learning rate
     # print(cfg.MODEL)
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128   # each image gets this many ROIs per image.

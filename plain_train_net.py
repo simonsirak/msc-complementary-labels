@@ -30,6 +30,7 @@ from detectron2.data import (
 )
 
 from detectron2.engine import default_argument_parser, default_setup, launch
+from detectron2.data import MetadataCatalog, DatasetCatalog
 
 # BECAUSE IT WON'T IMPORT FOR SOME REASON
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
@@ -97,14 +98,29 @@ def do_test(cfg, model):
         results = list(results.values())[0]
     return results
 
+from detectron2.engine.hooks import HookBase
+from detectron2.evaluation import inference_context
+from detectron2.utils.logger import log_every_n_seconds
+from detectron2.data import DatasetMapper, build_detection_test_loader
+import detectron2.utils.comm as comm
+import torch
+import time
+import datetime
+import numpy as np 
+
 # TODO: ADD PATIENCE AND BEST MODEL, AND STOP IF PATIENCE EXCEEDED
-class LossEvalHook(HookBase):
-  def __init__(self, eval_period, model, data_loader):
+class LossEvalHook:
+  def __init__(self, eval_period, model, model_name, data_loader, checkpointer, patience=0):
     self._model = model
+    self._model_name = model_name
     self._period = eval_period
     self._data_loader = data_loader
+    self._patience = patience # patience is specified in evaluation period units (e.g 3 evaluation periods)
+    self._cur_patience = 0
+    self._checkpointer = checkpointer
+    self._min_loss = float('inf') 
   
-  def _do_loss_eval(self):
+  def _do_loss_eval(self, cur_iter, storage):
     # Copying inference_on_dataset from evaluator.py
     total = len(self._data_loader)
     num_warmup = min(5, total - 1)
@@ -112,6 +128,7 @@ class LossEvalHook(HookBase):
     start_time = time.perf_counter()
     total_compute_time = 0
     losses = []
+    stop_early = False
     for idx, inputs in enumerate(self._data_loader):            
       if idx == num_warmup:
         start_time = time.perf_counter()
@@ -135,10 +152,19 @@ class LossEvalHook(HookBase):
       loss_batch = self._get_loss(inputs)
       losses.append(loss_batch)
     mean_loss = np.mean(losses)
-    self.trainer.storage.put_scalar('validation_loss', mean_loss)
+    
+    if mean_loss < self._min_loss:
+      self._patience = 0
+      self._min_loss = mean_loss
+      self._checkpointer.save(self._model_name + "_" + str(cur_iter))
+    else:
+      self._cur_patience += 1
+      if self._cur_patience > self._patience:
+        stop_early = True
+    storage.put_scalar('validation_loss', mean_loss)
     comm.synchronize()
 
-    return losses
+    return (losses, stop_early)
           
   def _get_loss(self, data):
       # How loss is calculated on train_loop 
@@ -150,12 +176,13 @@ class LossEvalHook(HookBase):
       total_losses_reduced = sum(loss for loss in metrics_dict.values())
       return total_losses_reduced
       
-  def after_step(self):
-      next_iter = self.trainer.iter + 1
-      is_final = next_iter == self.trainer.max_iter
-      if is_final or (self._period > 0 and next_iter % self._period == 0):
-          self._do_loss_eval()
-      self.trainer.storage.put_scalars(timetest=12)
+  def after_step(self, cur_iter, max_iter, storage):
+    next_iter = cur_iter + 1
+    is_final = next_iter == max_iter
+    if is_final or (self._period > 0 and next_iter % self._period == 0):
+        (_, stop_early) = self._do_loss_eval(cur_iter, storage)
+        return stop_early
+    return False
 
 def do_train(cfg, model, resume=False):
     model.train()
@@ -179,19 +206,22 @@ def do_train(cfg, model, resume=False):
     # compared to "train_net.py", we do not support accurate timing and
     # precise BN here, because they are not trivial to implement in a small training loop
     data_loader = build_detection_train_loader(cfg)
-
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
-            cfg.TEST.EVAL_PERIOD,
-            self.model,
-            build_detection_test_loader(
-                self.cfg,
-                self.cfg.DATASETS.TEST[0],
-                DatasetMapper(self.cfg,True)
-            )
+          cfg.TEST.EVAL_PERIOD,
+          model,
+          "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
+          build_detection_test_loader(
+            cfg,
+            cfg.DATASETS.TEST[0],
+            DatasetMapper(cfg,True)
+          ),
+          checkpointer,
+          patience=0
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
+        stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
 
@@ -210,22 +240,25 @@ def do_train(cfg, model, resume=False):
             storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
             scheduler.step()
 
-            if (
-                cfg.TEST.EVAL_PERIOD > 0
-                and (iteration + 1) % cfg.TEST.EVAL_PERIOD == 0
-                and iteration != max_iter - 1
-            ):
-                do_test(cfg, model)
-                # Compared to "train_net.py", the test results are not dumped to EventStorage
-                comm.synchronize()
-
             # REGULARLY CHECK/APPLY HOOK HERE
+            # if (
+            #     cfg.TEST.EVAL_PERIOD > 0
+            #     and (iteration + 1) % cfg.TEST.EVAL_PERIOD == 0
+            #     and iteration != max_iter - 1
+            # ):
+            stop_early = early_stopping.after_step(iteration, max_iter, storage)
+            # Compared to "train_net.py", the test results are not dumped to EventStorage
+            comm.synchronize()
+
             if iteration - start_iter > 5 and (
                 (iteration + 1) % 20 == 0 or iteration == max_iter - 1
             ):
                 for writer in writers:
                     writer.write()
             periodic_checkpointer.step(iteration)
+
+            if stop_early:
+              break
 
 from datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 
@@ -241,7 +274,8 @@ def setup(args):
         "test": pascal_voc.load_voc_instances("VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007", "test", names),
       }
     ds = CustomDataset(names, "person", splits)
-    (split_names, cfg, chosen_labels) = ds.subset("voc", 2, percentage=0.5)
+    (split_names, cfg, chosen_labels) = ds.subset("voc", 2, percentage=0.2)
+    cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
     cfg.freeze()
     default_setup(
         cfg, args
@@ -267,7 +301,8 @@ def main(args):
         )
 
     do_train(cfg, model, resume=args.resume)
-    return do_test(cfg, model)
+    #res = do_test(cfg, model)
+    #return res
 
 
 if __name__ == "__main__":
