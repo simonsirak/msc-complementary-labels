@@ -187,7 +187,10 @@ class LossEvalHook:
 def do_train(cfg, model, resume=False):
     model.train()
     optimizer = build_optimizer(cfg, model)
-    scheduler = build_lr_scheduler(cfg, optimizer)
+    # scheduler = build_lr_scheduler(cfg, optimizer)
+    # either this or "reduce on plateau", reduce on plateau has less hyperparams but might be worse? idk not much research on 
+    # lr scheduling pros and cons.
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.001, max_lr=0.1,step_size_up=5,mode="triangular2")
 
     checkpointer = DetectionCheckpointer(
         model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler
@@ -304,6 +307,83 @@ def main(args):
     #res = do_test(cfg, model)
     #return res
 
+import argparse 
+import sys
+def argument_parser():
+    """
+    Create a parser with some common arguments used by detectron2 users.
+
+    Args:
+        epilog (str): epilog passed to ArgumentParser describing the usage.
+
+    Returns:
+        argparse.ArgumentParser:
+    """
+    parser = argparse.ArgumentParser(f"""
+Examples:
+
+Run on single machine:
+    $ {sys.argv[0]} --num-gpus 8 --config-file cfg.yaml
+
+Change some config options:
+    $ {sys.argv[0]} --config-file cfg.yaml MODEL.WEIGHTS /path/to/weight.pth SOLVER.BASE_LR 0.001
+
+Run on multiple machines:
+    (machine0)$ {sys.argv[0]} --machine-rank 0 --num-machines 2 --dist-url <URL> [--other-flags]
+    (machine1)$ {sys.argv[0]} --machine-rank 1 --num-machines 2 --dist-url <URL> [--other-flags]
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Whether to attempt to resume from the checkpoint directory. "
+        "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
+    )
+    parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
+    parser.add_argument("--num-gpus", type=int, default=1, help="number of gpus *per machine*")
+    parser.add_argument("--num-machines", type=int, default=1, help="total number of machines")
+    parser.add_argument(
+        "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
+    )
+
+    # PyTorch still may leave orphan processes in multi-gpu training.
+    # Therefore we use a deterministic way to obtain port,
+    # so that users are aware of orphan processes by seeing the port occupied.
+    port = 2 ** 15 + 2 ** 14 + hash(os.getuid() if sys.platform != "win32" else 1) % 2 ** 14
+    parser.add_argument(
+        "--dist-url",
+        default="tcp://127.0.0.1:{}".format(port),
+        help="initialization URL for pytorch distributed backend. See "
+        "https://pytorch.org/docs/stable/distributed.html for details.",
+    )
+    parser.add_argument(
+        "opts",
+        help="Modify config options by adding 'KEY VALUE' pairs at the end of the command. "
+        "See config references at "
+        "https://detectron2.readthedocs.io/modules/config.html#config-references",
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+    return parser
+
+# TODO: Abstract setup (config, metadata stuff)
+# TODO: LR search
+
+import numpy as np
+# from: https://stackoverflow.com/questions/29346292/logarithmic-interpolation-in-python
+def log_interp1d(xx, yy, kind='linear'):
+    logx = np.log10(xx)
+    logy = np.log10(yy)
+    lin_interp = sp.interpolate.interp1d(logx, logy, kind=kind)
+    log_interp = lambda zz: np.power(10.0, lin_interp(np.log10(zz)))
+    return log_interp
+
+def lr_search(splits, cfg, lr_min_pow=-5, lr_max_pow=-1, resolution=20, n_epochs=5):
+  powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
+  lrs = 10 ** powers
+  return lrs
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()

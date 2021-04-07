@@ -15,6 +15,7 @@ from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog, DatasetCatalog
 
 import random
+import json 
 from copy import copy, deepcopy
 class CustomDataset:
   def __init__(self, labels, main_label, base_dict_func):
@@ -138,7 +139,7 @@ class CustomDataset:
     cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images
 
     # DEFAULT SOLVER CONFIG; OVERWRITE THIS FOR THE PARTICULAR DATASET/MODEL IN USE
-    cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
+    cfg.SOLVER.BASE_LR = 0.00025  # TODO: SET TO 0 HERE; if json provided to the dataset
     cfg.SOLVER.MAX_ITER = 10 * int(round(len(base_dicts["train"]) / cfg.SOLVER.IMS_PER_BATCH))    # this will vary depending on the amount of labels since detectron2 removes unannotated images by default
     #cfg.SOLVER.STEPS = []        # do not decay learning rate
     # print(cfg.MODEL)
@@ -147,7 +148,9 @@ class CustomDataset:
     cfg.MODEL.RETINANET.NUM_CLASSES = len(c2l)  # number of complementary labels + main label
     # NOTE: this config means the number of classes, but a few popular unofficial tutorials incorrect uses num_classes+1 here.
 
-    self.id = self.id + 1
+    with open('subsets' + str(self.id) + '.json', 'w') as fp:
+      json.dump({"chosen_labels": c2l, "fraction_of_main_dataset": percentage, "data": base_dicts}, fp, sort_keys=False, indent=4)
 
+    self.id = self.id + 1
     
     return (names, cfg, c2l)
