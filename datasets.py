@@ -126,6 +126,7 @@ class CustomDataset:
         MetadataCatalog.get(name).set(dirname="VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007")
       MetadataCatalog.get(name).set(split=split)
       MetadataCatalog.get(name).set(year=2007)      
+    
     # CONFIG
     # DEFAULT CHOSEN MODEL IS MASK RCNN, CAN ALSO USE RETINANET INSTEAD
     cfg = get_cfg()
@@ -148,7 +149,7 @@ class CustomDataset:
     cfg.MODEL.RETINANET.NUM_CLASSES = len(c2l)  # number of complementary labels + main label
     # NOTE: this config means the number of classes, but a few popular unofficial tutorials incorrect uses num_classes+1 here.
 
-    with open('subsets' + str(self.id) + '.json', 'w') as fp:
+    with open(base_name + "_" + str(self.id) + '.json', 'w') as fp:
       json.dump({"chosen_labels": c2l, "fraction_of_main_dataset": percentage, "data": base_dicts}, fp, sort_keys=False, indent=4)
 
     self.id = self.id + 1

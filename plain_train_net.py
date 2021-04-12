@@ -108,83 +108,9 @@ import time
 import datetime
 import numpy as np 
 
-# TODO: ADD PATIENCE AND BEST MODEL, AND STOP IF PATIENCE EXCEEDED
-class LossEvalHook:
-  def __init__(self, eval_period, model, model_name, data_loader, checkpointer, patience=0):
-    self._model = model
-    self._model_name = model_name
-    self._period = eval_period
-    self._data_loader = data_loader
-    self._patience = patience # patience is specified in evaluation period units (e.g 3 evaluation periods)
-    self._cur_patience = 0
-    self._checkpointer = checkpointer
-    self._min_loss = float('inf') 
-  
-  def _do_loss_eval(self, cur_iter, storage):
-    # Copying inference_on_dataset from evaluator.py
-    total = len(self._data_loader)
-    num_warmup = min(5, total - 1)
-        
-    start_time = time.perf_counter()
-    total_compute_time = 0
-    losses = []
-    stop_early = False
-    for idx, inputs in enumerate(self._data_loader):            
-      if idx == num_warmup:
-        start_time = time.perf_counter()
-        total_compute_time = 0
-      start_compute_time = time.perf_counter()
-      if torch.cuda.is_available():
-        torch.cuda.synchronize()
-      total_compute_time += time.perf_counter() - start_compute_time
-      iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
-      seconds_per_img = total_compute_time / iters_after_start
-      if idx >= num_warmup * 2 or seconds_per_img > 5:
-        total_seconds_per_img = (time.perf_counter() - start_time) / iters_after_start
-        eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
-        log_every_n_seconds(
-          logging.INFO,
-          "Loss on Validation  done {}/{}. {:.4f} s / img. ETA={}".format(
-            idx + 1, total, seconds_per_img, str(eta)
-          ),
-          n=5,
-        )
-      loss_batch = self._get_loss(inputs)
-      losses.append(loss_batch)
-    mean_loss = np.mean(losses)
-    
-    if mean_loss < self._min_loss:
-      self._patience = 0
-      self._min_loss = mean_loss
-      self._checkpointer.save(self._model_name + "_" + str(cur_iter))
-    else:
-      self._cur_patience += 1
-      if self._cur_patience > self._patience:
-        stop_early = True
-    storage.put_scalar('validation_loss', mean_loss)
-    comm.synchronize()
+from loss_eval_hook import LossEvalHook
 
-    return (losses, stop_early)
-          
-  def _get_loss(self, data):
-      # How loss is calculated on train_loop 
-      metrics_dict = self._model(data)
-      metrics_dict = {
-          k: v.detach().cpu().item() if isinstance(v, torch.Tensor) else float(v)
-          for k, v in metrics_dict.items()
-      }
-      total_losses_reduced = sum(loss for loss in metrics_dict.values())
-      return total_losses_reduced
-      
-  def after_step(self, cur_iter, max_iter, storage):
-    next_iter = cur_iter + 1
-    is_final = next_iter == max_iter
-    if is_final or (self._period > 0 and next_iter % self._period == 0):
-        (_, stop_early) = self._do_loss_eval(cur_iter, storage)
-        return stop_early
-    return False
-
-def do_train(cfg, model, resume=False):
+def do_train(cfg, model, resume=False, use_early_stopping=True):
     model.train()
     optimizer = build_optimizer(cfg, model)
     # scheduler = build_lr_scheduler(cfg, optimizer)
@@ -208,7 +134,21 @@ def do_train(cfg, model, resume=False):
 
     # compared to "train_net.py", we do not support accurate timing and
     # precise BN here, because they are not trivial to implement in a small training loop
-    data_loader = build_detection_train_loader(cfg)
+    import detectron2.data.transforms as T
+    from detectron2.data import DatasetMapper   # the default mapper
+
+    # augmentations are those that are the strategies, those are the ones
+    # that should be used. Transformations are deterministic operations 
+    # used by the (potentially random) augmentations. 
+    #
+    # NOTE: I don't think I'll implement elastic transform, mostly needed for 
+    # medical though since natural scale objects don't usually warp like that
+    # in photos.
+    data_loader = build_detection_train_loader(cfg, mapper=DatasetMapper(
+      cfg, is_train=True, augmentations=[
+        # TODO: Add list of augmentations, see these: https://detectron2.readthedocs.io/en/latest/modules/data_transforms.html
+      ]
+    ))
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
           cfg.TEST.EVAL_PERIOD,
@@ -260,8 +200,9 @@ def do_train(cfg, model, resume=False):
                     writer.write()
             periodic_checkpointer.step(iteration)
 
-            if stop_early:
+            if stop_early and use_early_stopping:
               break
+    return early_stopping._latest_loss # for learning rate evaluation
 
 from datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 
@@ -270,42 +211,150 @@ def setup(args):
     """
     Create configs and perform basic setups.
     """
-    names = list(pascal_voc.CLASS_NAMES)
-    splits = {
-        "train": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "train", names),
-        "val": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "val", names),
-        "test": pascal_voc.load_voc_instances("VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007", "test", names),
-      }
-    ds = CustomDataset(names, "person", splits)
-    (split_names, cfg, chosen_labels) = ds.subset("voc", 2, percentage=0.2)
-    cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
-    cfg.freeze()
-    default_setup(
-        cfg, args
-    )  # if you don't like any of the default setup, write your own setup code
-    return cfg
+    if args.dataset == "PascalVOC2007":
+      names = list(pascal_voc.CLASS_NAMES)
+      ds = CustomDataset(names, "person", splits)
+      (split_names, cfg, chosen_labels) = ds.subset("voc", 2, percentage=0.2)
+      cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
+      #cfg.freeze()
+      default_setup(
+          cfg, args
+      )  # if you don't like any of the default setup, write your own setup code
+      return cfg
+    else:
+      raise NotImplementedError(
+            f"Dataset {args.dataset} is not supported"
+        )
 
+# TODO: Abstract setup (config, metadata stuff)
+# TODO: LR search
+
+import numpy as np
+
+def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-1, resolution=20, n_epochs=5):
+  powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
+  lrs = 10 ** powers
+  best_val = float('inf')
+  best_lr = 0
+  for lr in lrs:
+    # do setup 
+    cfg.SOLVER.BASE_LR = lr
+    model = build_model(cfg)
+    # train 5 epochs
+    val_loss = do_train(cfg, model, resume=False, use_early_stopping=False)
+    # calc val loss at the end
+    if val_loss < best_val:
+      best_val = val_loss
+      best_lr = lr
+
+  print("LR Search done: Best LR is", best_lr, "with validation loss", val_loss)
+  return best_lr
+
+# construct dataset base dictionaries of each split
+# and return a CustomDataset object
+def extract_dataset(dataset_name, main_label):
+  if dataset_name == "PascalVOC2007":
+    labels = list(pascal_voc.CLASS_NAMES)
+    base_dataset = {
+      "train": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "train", labels),
+      "val": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "val", labels),
+      "test": pascal_voc.load_voc_instances("VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007", "test", labels),
+    }
+    return CustomDataset(labels, main_label, base_dataset)
+  else:
+    raise NotImplementedError(f"Dataset {args.dataset} is not supported")
+
+from detectron2 import model_zoo
+#TODO: Look into data loaders and add augmentations to them.
+def base_experiment(dataset):
+  main_label = args.main_label
+
+  # no complementaries
+  ds, _, _ = dataset.subset(args.dataset + "_no_complementary_labels")
+
+  # build config for it once in beginning (can do it once in 
+  # the beginning since dataset will be the same for this 
+  # experiment, no randomness involved)
+
+  cfg = get_cfg()
+  cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_C4.yaml"))
+  cfg.DATASETS.TRAIN = ds[0] # training name
+  cfg.DATASETS.TEST = ds[1] # validation name
+  cfg.DATALOADER.NUM_WORKERS = 2
+  
+  cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images
+  
+  # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
+  cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
+  
+  #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
+  
+  # this will vary for the subset experiments. Also, 
+  # detectron2 removes unannotated images by default
+  # but only working on images with main label works 
+  # around that problem. (the math expression results
+  # in 1 epoch of training)
+  cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+  
+  #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
+
+  cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
+  cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
+
+  for i in range(5): # repeat many times
+    lr = lr_search(cfg, resolution=10, n_epochs=2)
+    cfg.SOLVER.BASE_LR = lr # could instead be assigned to cfg in lr_search but whatevs
+    model = build_model(cfg)
+    do_train(cfg, model)
+    do_test(cfg, model)
+  pass
+
+def leave_one_out(dataset, args):
+  pass 
 
 def main(args):
-    cfg = setup(args)
+  # if args.create_all_datasets:
+  # * create subsets for experiments
+  # * do lr search for each of them (no intermediate val_loss)
 
-    model = build_model(cfg)
-    logger.info("Model:\n{}".format(model))
-    if args.eval_only:
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=args.resume
-        )
-        return do_test(cfg, model)
+  dataset_name = args.dataset 
+  main_label = args.main_label
+  base_dataset = extract_dataset(dataset_name, main_label)
+  
+  # default_setup literally only sets the cfg rng seed, the output directory, and whether cudnn.benchmark should be used.
+  # I only load it because of the setup.
+  base_cfg = get_cfg()
+  base_cfg.SEED = args.seed
 
-    distributed = comm.get_world_size() > 1
-    if distributed:
-        model = DistributedDataParallel(
-            model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
-        )
+  # https://towardsdatascience.com/properly-setting-the-random-seed-in-machine-learning-experiments-7da298d1320b
 
-    do_train(cfg, model, resume=args.resume)
-    #res = do_test(cfg, model)
-    #return res
+  # set seed for all frameworks used (python hashing, python random, numpy, pytorch/detectron2)
+  # also sets up logger and some cudnn benchmark thingy that idk. 
+  # TODO: Make sure the seeding is redone before each experiment
+  # (i.e once before base experiments, once before leave-one-out, 
+  # once before varying labels etc). Only once tho, not for each 
+  # repetition of each experiment!
+  default_setup(base_cfg, args)
+
+  cfg = setup(args)
+
+  model = build_model(cfg)
+  logger.info("Model:\n{}".format(model))
+  if args.eval_only:
+      DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+          cfg.MODEL.WEIGHTS, resume=args.resume
+      )
+      return do_test(cfg, model)
+
+  distributed = comm.get_world_size() > 1
+  if distributed:
+      model = DistributedDataParallel(
+          model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+      )
+
+  do_train(cfg, model, resume=args.resume)
+  #res = do_test(cfg, model)
+  #return res
 
 import argparse 
 import sys
@@ -347,6 +396,21 @@ Run on multiple machines:
     parser.add_argument(
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
+    parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
+    parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
+ 
+    parser.add_argument("--seed", type=int, default=898, help="number of complementary labels for vary label experiments")
+
+    # experiments to run in one sitting
+    parser.add_argument("--base", action="store_true", help="perform base experiment")
+    parser.add_argument("--leave-one-out", action="store_true", help="perform leave one out experiment")
+    parser.add_argument("--vary-data", action="store_true", help="perform varying data experiments")
+    parser.add_argument("--vary-labels", action="store_true", help="perform varying complementary labels experiments")
+
+    parser.add_argument("--num-comp-labels", type=int, default=0, help="number of complementary labels for vary label experiments")
+    parser.add_argument("--dataset-fraction", type=float, default=0.5, help="fraction of data to use for experiments; default half for all non-dataset related experiments")
+
+    # TODO: Maybe an argument for datasets directory.
 
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,
@@ -367,23 +431,6 @@ Run on multiple machines:
         nargs=argparse.REMAINDER,
     )
     return parser
-
-# TODO: Abstract setup (config, metadata stuff)
-# TODO: LR search
-
-import numpy as np
-# from: https://stackoverflow.com/questions/29346292/logarithmic-interpolation-in-python
-def log_interp1d(xx, yy, kind='linear'):
-    logx = np.log10(xx)
-    logy = np.log10(yy)
-    lin_interp = sp.interpolate.interp1d(logx, logy, kind=kind)
-    log_interp = lambda zz: np.power(10.0, lin_interp(np.log10(zz)))
-    return log_interp
-
-def lr_search(splits, cfg, lr_min_pow=-5, lr_max_pow=-1, resolution=20, n_epochs=5):
-  powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
-  lrs = 10 ** powers
-  return lrs
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
