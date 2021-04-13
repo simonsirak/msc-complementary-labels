@@ -84,16 +84,16 @@ def get_evaluator(cfg, dataset_name, output_folder=None):
 
 def do_test(cfg, model):
     results = OrderedDict()
-    for dataset_name in cfg.DATASETS.TEST:
-        data_loader = build_detection_test_loader(cfg, dataset_name)
-        evaluator = get_evaluator(
-            cfg, dataset_name, os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
-        )
-        results_i = inference_on_dataset(model, data_loader, evaluator)
-        results[dataset_name] = results_i
-        if comm.is_main_process():
-            logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-            print_csv_format(results_i)
+    dataset_name = cfg.DATASETS.TEST[1]
+    data_loader = build_detection_test_loader(cfg, dataset_name)
+    evaluator = get_evaluator(
+        cfg, dataset_name, os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
+    )
+    results_i = inference_on_dataset(model, data_loader, evaluator)
+    results[dataset_name] = results_i
+    if comm.is_main_process():
+        logger.info("Evaluation results for {} in csv format:".format(dataset_name))
+        print_csv_format(results_i)
     if len(results) == 1:
         results = list(results.values())[0]
     return results
@@ -110,13 +110,14 @@ import numpy as np
 
 from loss_eval_hook import LossEvalHook
 
+# TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True):
     model.train()
     optimizer = build_optimizer(cfg, model)
     # scheduler = build_lr_scheduler(cfg, optimizer)
     # either this or "reduce on plateau", reduce on plateau has less hyperparams but might be worse? idk not much research on 
     # lr scheduling pros and cons.
-    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.001, max_lr=0.1,step_size_up=5,mode="triangular2")
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=cfg.SOLVER.BASE_LR, max_lr=cfg.SOLVER.BASE_LR*2,step_size_up=5,mode="triangular2")
 
     checkpointer = DetectionCheckpointer(
         model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler
@@ -124,6 +125,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
     start_iter = (
         checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
     )
+    
     max_iter = cfg.SOLVER.MAX_ITER
 
     periodic_checkpointer = PeriodicCheckpointer(
@@ -145,21 +147,24 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
     # medical though since natural scale objects don't usually warp like that
     # in photos.
     data_loader = build_detection_train_loader(cfg, mapper=DatasetMapper(
-      cfg, is_train=True, augmentations=[
+      cfg, is_train=True#, augmentations=[
         # TODO: Add list of augmentations, see these: https://detectron2.readthedocs.io/en/latest/modules/data_transforms.html
-      ]
+      #]
     ))
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
           cfg.TEST.EVAL_PERIOD,
           model,
           "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
-          build_detection_test_loader(
-            cfg,
-            cfg.DATASETS.TEST[0],
-            DatasetMapper(cfg,True)
+          build_detection_train_loader( # test loader would use batch size 1 for benchmarking, very slow
+            DatasetCatalog.get(cfg.DATASETS.TEST[0]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
+            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+            num_workers=cfg.DATALOADER.NUM_WORKERS,
+            mapper=DatasetMapper(cfg,True), #do_train=True means we are in training mode.
+            #aspect_ratio_grouping=False
           ),
           checkpointer,
+          int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH)),
           patience=0
         )
     logger.info("Starting training from iteration {}".format(start_iter))
@@ -238,7 +243,8 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-1, resolution=20, n_epochs=5):
   best_lr = 0
   for lr in lrs:
     # do setup 
-    cfg.SOLVER.BASE_LR = lr
+    cfg.SOLVER.BASE_LR = float(lr)
+    cfg.SOLVER.MAX_ITER = n_epochs * int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH))
     model = build_model(cfg)
     # train 5 epochs
     val_loss = do_train(cfg, model, resume=False, use_early_stopping=False)
@@ -270,19 +276,20 @@ def base_experiment(dataset):
   main_label = args.main_label
 
   # no complementaries
-  ds, _, _ = dataset.subset(args.dataset + "_no_complementary_labels")
+  ds, _ = dataset.subset(args.dataset + "_no_complementary_labels")
 
   # build config for it once in beginning (can do it once in 
   # the beginning since dataset will be the same for this 
   # experiment, no randomness involved)
 
   cfg = get_cfg()
-  cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_C4.yaml"))
-  cfg.DATASETS.TRAIN = ds[0] # training name
-  cfg.DATASETS.TEST = ds[1] # validation name
-  cfg.DATALOADER.NUM_WORKERS = 2
+  cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
+  cfg.DATASETS.TRAIN = (ds[0],) # training name
+  cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
+  cfg.DATALOADER.NUM_WORKERS = 8
   
   cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images
+  cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 64 # chose a much smaller number of recognizable objects, compared to 512
   
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
@@ -301,12 +308,18 @@ def base_experiment(dataset):
   cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
   cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
 
-  for i in range(5): # repeat many times
-    lr = lr_search(cfg, resolution=10, n_epochs=2)
-    cfg.SOLVER.BASE_LR = lr # could instead be assigned to cfg in lr_search but whatevs
+  cfg.TEST.EVAL_PERIOD = 0
+  print("Entering lr search... ")
+  lr = lr_search(cfg, resolution=2, n_epochs=1)
+  print("lr search finished, optimal lr is", lr)
+  cfg.SOLVER.BASE_LR = float(lr) # could instead be assigned to cfg in lr_search but whatevs
+  for i in range(2): # repeat many times
     model = build_model(cfg)
+    # set evaluation to occur every epoch instead of only in end
+    cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
     do_train(cfg, model)
-    do_test(cfg, model)
+    #do_test(cfg, model)
   pass
 
 def leave_one_out(dataset, args):
@@ -335,24 +348,30 @@ def main(args):
   # once before varying labels etc). Only once tho, not for each 
   # repetition of each experiment!
   default_setup(base_cfg, args)
+  
+  print("Dataset loaded successfully, basic configuration completed.")
+  if args.base:
+    print("Entering base experiment...")
+    base_experiment(base_dataset)
+    print("Base experiment finished!")
 
-  cfg = setup(args)
+  # cfg = setup(args)
 
-  model = build_model(cfg)
-  logger.info("Model:\n{}".format(model))
-  if args.eval_only:
-      DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-          cfg.MODEL.WEIGHTS, resume=args.resume
-      )
-      return do_test(cfg, model)
+  # model = build_model(cfg)
+  # logger.info("Model:\n{}".format(model))
+  # if args.eval_only:
+  #     DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+  #         cfg.MODEL.WEIGHTS, resume=args.resume
+  #     )
+  #     return do_test(cfg, model)
 
-  distributed = comm.get_world_size() > 1
-  if distributed:
-      model = DistributedDataParallel(
-          model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
-      )
+  # distributed = comm.get_world_size() > 1
+  # if distributed:
+  #     model = DistributedDataParallel(
+  #         model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+  #     )
 
-  do_train(cfg, model, resume=args.resume)
+  # do_train(cfg, model, resume=args.resume)
   #res = do_test(cfg, model)
   #return res
 
@@ -402,7 +421,7 @@ Run on multiple machines:
     parser.add_argument("--seed", type=int, default=898, help="number of complementary labels for vary label experiments")
 
     # experiments to run in one sitting
-    parser.add_argument("--base", action="store_true", help="perform base experiment")
+    parser.add_argument("--base", action="store_true", default=False, help="perform base experiment")
     parser.add_argument("--leave-one-out", action="store_true", help="perform leave one out experiment")
     parser.add_argument("--vary-data", action="store_true", help="perform varying data experiments")
     parser.add_argument("--vary-labels", action="store_true", help="perform varying complementary labels experiments")
@@ -433,7 +452,7 @@ Run on multiple machines:
     return parser
 
 if __name__ == "__main__":
-    args = default_argument_parser().parse_args()
+    args = argument_parser().parse_args()
     print("Command Line Args:", args)
     launch(
         main,

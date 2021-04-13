@@ -125,33 +125,17 @@ class CustomDataset:
       elif split == "test":
         MetadataCatalog.get(name).set(dirname="VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007")
       MetadataCatalog.get(name).set(split=split)
-      MetadataCatalog.get(name).set(year=2007)      
-    
-    # CONFIG
-    # DEFAULT CHOSEN MODEL IS MASK RCNN, CAN ALSO USE RETINANET INSTEAD
-    cfg = get_cfg()
+      MetadataCatalog.get(name).set(year=2007) 
 
-    # this config uses imagenet pretrained already https://github.com/facebookresearch/detectron2/tree/master/configs/PascalVOC-Detection
-    cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_C4.yaml"))
-    cfg.DATASETS.TRAIN = (base_name + "_train_" + str(self.id),) if base_name + "_train_" + str(self.id) in names else ()
-    cfg.DATASETS.TEST = (base_name + "_val_" + str(self.id),) if base_name + "_val_" + str(self.id) in names else ()
-    cfg.DATALOADER.NUM_WORKERS = 2
-    
-    cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images
-
-    # DEFAULT SOLVER CONFIG; OVERWRITE THIS FOR THE PARTICULAR DATASET/MODEL IN USE
-    cfg.SOLVER.BASE_LR = 0.00025  # TODO: SET TO 0 HERE; if json provided to the dataset
-    cfg.SOLVER.MAX_ITER = 10 * int(round(len(base_dicts["train"]) / cfg.SOLVER.IMS_PER_BATCH))    # this will vary depending on the amount of labels since detectron2 removes unannotated images by default
-    #cfg.SOLVER.STEPS = []        # do not decay learning rate
-    # print(cfg.MODEL)
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128   # each image gets this many ROIs per image.
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(c2l)  # number of complementary labels + main label
-    cfg.MODEL.RETINANET.NUM_CLASSES = len(c2l)  # number of complementary labels + main label
-    # NOTE: this config means the number of classes, but a few popular unofficial tutorials incorrect uses num_classes+1 here.
-
-    with open(base_name + "_" + str(self.id) + '.json', 'w') as fp:
-      json.dump({"chosen_labels": c2l, "fraction_of_main_dataset": percentage, "data": base_dicts}, fp, sort_keys=False, indent=4)
+      print("SPLIT SIZE:", len(base_dicts[split]))
 
     self.id = self.id + 1
+
+    names.sort()
+    ordered_names = []
+    ordered_names.append(names[1])
+    ordered_names.append(names[2])
+    ordered_names.append(names[0])
+    print(ordered_names)
     
-    return (names, cfg, c2l)
+    return (ordered_names, c2l)
