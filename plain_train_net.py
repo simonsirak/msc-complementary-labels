@@ -110,10 +110,38 @@ import numpy as np
 
 from loss_eval_hook import LossEvalHook
 
+
+from detectron2.data.samplers import InferenceSampler
+from detectron2.data.common import DatasetFromList, MapDataset
+
+# builds a loader that iterates over the dataset once,
+# like build_detection_test_loader, but with arbitrary
+# batch size.
+def build_eval_loader(dataset, *, mapper, sampler=None, num_workers=0, batch_size=1):
+  if isinstance(dataset, list):
+    dataset = DatasetFromList(dataset, copy=False)
+  if mapper is not None:
+    dataset = MapDataset(dataset, mapper)
+  if sampler is None:
+    sampler = InferenceSampler(len(dataset))
+  # Always use 1 image per worker during inference since this is the
+  # standard when reporting inference time in papers.
+  batch_sampler = torch.utils.data.sampler.BatchSampler(sampler, batch_size, drop_last=False)
+  data_loader = torch.utils.data.DataLoader(
+    dataset,
+    num_workers=num_workers,
+    batch_sampler=batch_sampler,
+    collate_fn=lambda batch: batch, # identity function
+  )
+
+  return data_loader
+
+from augmentor import DummyAlbuMapper
+
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True):
     model.train()
-    optimizer = build_optimizer(cfg, model)
+    optimizer = build_optimizer(cfg, model) # TODO: This returns an SGD optimizer, maybe change to ADAM
     # scheduler = build_lr_scheduler(cfg, optimizer)
     # either this or "reduce on plateau", reduce on plateau has less hyperparams but might be worse? idk not much research on 
     # lr scheduling pros and cons.
@@ -135,9 +163,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
     writers = default_writers(cfg.OUTPUT_DIR, max_iter) if comm.is_main_process() else []
 
     # compared to "train_net.py", we do not support accurate timing and
-    # precise BN here, because they are not trivial to implement in a small training loop
-    import detectron2.data.transforms as T
-    from detectron2.data import DatasetMapper   # the default mapper
+    # precise BN here, because they are not trivial to implement in a small training 
 
     # augmentations are those that are the strategies, those are the ones
     # that should be used. Transformations are deterministic operations 
@@ -146,25 +172,23 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
     # NOTE: I don't think I'll implement elastic transform, mostly needed for 
     # medical though since natural scale objects don't usually warp like that
     # in photos.
-    data_loader = build_detection_train_loader(cfg, mapper=DatasetMapper(
-      cfg, is_train=True#, augmentations=[
-        # TODO: Add list of augmentations, see these: https://detectron2.readthedocs.io/en/latest/modules/data_transforms.html
-      #]
+    data_loader = build_detection_train_loader(cfg, mapper=DummyAlbuMapper(
+      cfg, is_train=True
     ))
+
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
           cfg.TEST.EVAL_PERIOD,
           model,
           "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
-          build_detection_train_loader( # test loader would use batch size 1 for benchmarking, very slow
+          build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
             DatasetCatalog.get(cfg.DATASETS.TEST[0]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
-            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+            batch_size=cfg.SOLVER.IMS_PER_BATCH,
             num_workers=cfg.DATALOADER.NUM_WORKERS,
             mapper=DatasetMapper(cfg,True), #do_train=True means we are in training mode.
             #aspect_ratio_grouping=False
           ),
           checkpointer,
-          int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH)),
           patience=0
         )
     logger.info("Starting training from iteration {}".format(start_iter))
@@ -236,7 +260,7 @@ def setup(args):
 
 import numpy as np
 
-def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-1, resolution=20, n_epochs=5):
+def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
   lrs = 10 ** powers
   best_val = float('inf')
@@ -271,6 +295,22 @@ def extract_dataset(dataset_name, main_label):
     raise NotImplementedError(f"Dataset {args.dataset} is not supported")
 
 from detectron2 import model_zoo
+from detectron2.engine import DefaultPredictor
+from detectron2.utils.visualizer import Visualizer
+import random 
+import cv2
+def save_sample(img):
+  predictor = DefaultPredictor(cfg)
+  dataset_dicts = DatasetCatalog.get(dataset_name)
+  for d in random.sample(dataset_dicts, 3):    
+    im = cv2.imread(d["file_name"])
+    outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
+    v = Visualizer(im[:, :, ::-1],
+                    metadata=MetadataCatalog.get(dataset_name), 
+                    scale=0.5)
+    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+    cv2.imshow(out.get_image()[:, :, ::-1])
+
 #TODO: Look into data loaders and add augmentations to them.
 def base_experiment(dataset):
   main_label = args.main_label
@@ -283,14 +323,21 @@ def base_experiment(dataset):
   # experiment, no randomness involved)
 
   cfg = get_cfg()
+
+  # These are the augmentations im thinking abt using. 
+  # Basically shift/scale/rotate, some sort of brightness/contrast manip,
+  # flip, cutting out a rectangle, and blurring the image. CLAHE and blur 
+  # might contradict each other a bit which in their purpose but at the 
+  # same time, one provides better brightness variation and one provides 
+  # blur to focus on the overall picture. So in a sense they complement 
+  # each other as well.
+  cfg.INPUT.ALBUMENTATIONS = "./augs.json"
   cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
   cfg.DATASETS.TRAIN = (ds[0],) # training name
   cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
   cfg.DATALOADER.NUM_WORKERS = 8
   
-  cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images
-  cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 64 # chose a much smaller number of recognizable objects, compared to 512
-  
+  cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
   
@@ -418,7 +465,9 @@ Run on multiple machines:
     parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
     parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
  
-    parser.add_argument("--seed", type=int, default=898, help="number of complementary labels for vary label experiments")
+    parser.add_argument("--seed", type=int, default=898, help="seed used for randomization")
+    
+    parser.add_argument("--sample", action="store_true", default=False, help="perform sample inference on some images")
 
     # experiments to run in one sitting
     parser.add_argument("--base", action="store_true", default=False, help="perform base experiment")

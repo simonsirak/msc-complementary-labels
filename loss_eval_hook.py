@@ -11,7 +11,7 @@ import logging
 
 # TODO: ADD PATIENCE AND BEST MODEL, AND STOP IF PATIENCE EXCEEDED
 class LossEvalHook:
-  def __init__(self, eval_period, model, model_name, data_loader, checkpointer, dataset_size, patience=0):
+  def __init__(self, eval_period, model, model_name, data_loader, checkpointer, patience=0):
     self._model = model
     self._model_name = model_name
     self._period = eval_period
@@ -21,11 +21,10 @@ class LossEvalHook:
     self._checkpointer = checkpointer
     self._min_loss = float('inf')
     self._latest_loss = float('inf') 
-    self._dataset_size = dataset_size
   
   def _do_loss_eval(self, cur_iter, storage):
     # Copying inference_on_dataset from evaluator.py
-    total = self._dataset_size
+    total = len(self._data_loader)
     num_warmup = min(5, total - 1)
         
     start_time = time.perf_counter()
