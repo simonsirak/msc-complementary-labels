@@ -28,12 +28,7 @@ class DummyAlbuMapper:
     def __init__(self, cfg, is_train=True):
         self.aug = self._get_aug(cfg.INPUT.ALBUMENTATIONS)
         self.img_format = cfg.INPUT.FORMAT
-        self.resize_gen = utils.build_transform_gen(cfg, is_train)
         #TODO: BoxMode based on added custom cfg key since it varies based on dataset.
-        if cfg.INPUT.CROP.ENABLED and is_train:
-            self.crop_gen = T.RandomCrop(cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE)
-        else:
-            self.crop_gen = None
             
     def _get_aug(self, arg):
         with open(arg) as f:
@@ -42,18 +37,28 @@ class DummyAlbuMapper:
     def __call__(self, dataset_dict):
         dataset_dict = copy.deepcopy(dataset_dict)
 
+        # Reads image in format H, W, C. C is in color format self.img_format 
+        # (usually BGR because default models in detectron2 use that)
+        print(self.img_format)
         img = utils.read_image(dataset_dict['file_name'], format=self.img_format)
+        print("SHAPE OF IMG", img.shape)
 
         boxes = [ann['bbox'] for ann in dataset_dict['annotations']]
         labels = [ann['category_id'] for ann in dataset_dict['annotations']]
 
-        augm_annotation = self.aug(image=img, bboxes=boxes, category_id=labels)
+        # albumentations wants RGB format so we reverse ASSUMING BGR IS THE CURRENT FORMAT
+        augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
 
-        img = augm_annotation['image']
+        img = augm_annotation['image'][:,:,::-1]
         h, w, _ = img.shape
 
+        # print(self.aug.processors["bboxes"].params.format)
+        # exit(0)
+
+        #print("IMAGES AFTER ALBUMENTATIONS", img.transpose(2, 0, 1))
         augm_boxes = np.array(augm_annotation['bboxes'], dtype=np.float32)
-        print(augm_boxes)
+        # print(augm_boxes)
+        # exit(0)
         # sometimes bbox annotations go beyond image 
         #augm_boxes[:, :] = augm_boxes[:, :].clip(min=[0, 0, 0, 0], max=[w, h, w, h])
         augm_labels = np.array(augm_annotation['category_id'])
@@ -66,38 +71,27 @@ class DummyAlbuMapper:
             }
             for i in range(len(augm_boxes))
         ]
-        
-        if self.crop_gen:
-            # image crop using detectron tools
-            crop_tfm = utils.gen_crop_transform_with_instance(
-                self.crop_gen.get_crop_size(img.shape[:2]),
-                img.shape[:2],
-                np.random.choice(dataset_dict["annotations"])
-            )
-            img = crop_tfm.apply_image(img)
 
-        # image resize using detectron tools
-        img, transforms = T.apply_transform_gens(self.resize_gen, img)
-        if self.crop_gen:
-            transforms = crop_tfm + transforms
         annos = [
-            utils.transform_instance_annotations(
-                obj, transforms, img.shape[:2]
-            )
+            obj
             for obj in dataset_dict.pop("annotations")
-            if obj.get("iscrowd", 0) == 0
+            #if obj.get("iscrowd", 0) == 0
         ]
+
         dataset_dict['annotations'] = annos
         instances = utils.annotations_to_instances(
             annos, img.shape[:2]
         )
+        
         dataset_dict["instances"] = utils.filter_empty_instances(instances)
 
         dataset_dict['height'] = img.shape[0]
         dataset_dict['width'] = img.shape[1]
 
-        dataset_dict["image"] = torch.as_tensor(
-            img.transpose(2, 0, 1).astype("float32")
-        ).contiguous()
+        # converts to tensor of format C, H, W,
+        # also returns back to BGR from RGB
+        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(img.transpose(2, 0, 1)))
+
+        #print("IMAGES AFTER DETECTRON2 STUFF", img.transpose(2, 0, 1))
 
         return dataset_dict

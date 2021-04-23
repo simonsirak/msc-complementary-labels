@@ -75,6 +75,7 @@ class LossEvalHook:
           
   def _get_loss(self, data):
       # How loss is calculated on train_loop 
+      # Note that no backwards step is done so no updates are made
       metrics_dict = self._model(data)
       metrics_dict = {
           k: v.detach().cpu().item() if isinstance(v, torch.Tensor) else float(v)

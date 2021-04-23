@@ -172,9 +172,12 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
     # NOTE: I don't think I'll implement elastic transform, mostly needed for 
     # medical though since natural scale objects don't usually warp like that
     # in photos.
-    data_loader = build_detection_train_loader(cfg, mapper=DummyAlbuMapper(
-      cfg, is_train=True
-    ))
+    data_loader = build_detection_train_loader(
+      dataset=DatasetCatalog.get(cfg.DATASETS.TRAIN[0]), 
+      mapper=DummyAlbuMapper(cfg, is_train=True),
+      total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+      num_workers=cfg.DATALOADER.NUM_WORKERS
+    )
 
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
@@ -193,7 +196,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
-        stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        #stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
 
@@ -218,6 +221,29 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
             #     and (iteration + 1) % cfg.TEST.EVAL_PERIOD == 0
             #     and iteration != max_iter - 1
             # ):
+            if iteration % 100 == 0:
+              model.eval()
+              with torch.no_grad():
+                outputs = model(data)
+                #print(data[0]["image"])
+                img = data[0]["image"]
+                # print(data[0])
+                # exit(0)
+                from detectron2.data import detection_utils as utils
+                orig = utils.read_image(data[0]['file_name'], format="RGB")
+                #print(img.detach().cpu().numpy()[:,:,::-1])
+                # permute C, H, W format to H, W, C format and flip C from BGR to RGB
+                v = Visualizer(img.permute(1,2,0).numpy()[:,:,::-1], # = img[:,:,::-1] in numpy
+                #v = Visualizer(orig[:,:,::-1], # = img[:,:,::-1] in numpy
+                    metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
+                    scale=1)
+                #out = v.draw_instance_predictions(outputs[0]["instances"].to("cpu"))
+                out = v.draw_dataset_dict(data[0])
+                cv2.imshow('sample.jpg', out.get_image())
+                cv2.waitKey()
+                cv2.destroyWindow('sample.jpg')
+                exit(0)
+              model.train()
             stop_early = early_stopping.after_step(iteration, max_iter, storage)
             # Compared to "train_net.py", the test results are not dumped to EventStorage
             comm.synchronize()
@@ -271,7 +297,7 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
     cfg.SOLVER.MAX_ITER = n_epochs * int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH))
     model = build_model(cfg)
     # train 5 epochs
-    val_loss = do_train(cfg, model, resume=False, use_early_stopping=False)
+    val_loss = do_train(cfg, model, resume=False, use_early_stopping=False) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
     # calc val loss at the end
     if val_loss < best_val:
       best_val = val_loss
@@ -332,6 +358,11 @@ def base_experiment(dataset):
   # blur to focus on the overall picture. So in a sense they complement 
   # each other as well.
   cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+
+  # default is BGR for NO reason except it's nice with opencv. 
+  # HOWEVER Visualizer wants RGB to conform with Matplotlib. 
+  # BUT I want RGB for albumentations without copying and flipping the tensor manually.
+  #cfg.INPUT.FORMAT = "RGB"
   cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
   cfg.DATASETS.TRAIN = (ds[0],) # training name
   cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
@@ -465,7 +496,7 @@ Run on multiple machines:
     parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
     parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
  
-    parser.add_argument("--seed", type=int, default=898, help="seed used for randomization")
+    parser.add_argument("--seed", type=int, default=random.randint(0,1000), help="seed used for randomization")
     
     parser.add_argument("--sample", action="store_true", default=False, help="perform sample inference on some images")
 

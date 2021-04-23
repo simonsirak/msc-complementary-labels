@@ -80,7 +80,7 @@ class CustomDataset:
       # DATASET
       comp_labels = copy(valid_labels)
       comp_labels.remove(self.main_label)
-      random.seed(seed)
+      random.seed(seed) # TODO: Don't seed here, seed in the beginning of an experiment only. Otherwise it is not pseudorandom.
       print("all complementary labels: ", comp_labels)
       c2l = random.sample(comp_labels, nb_comp_labels)
       c2l.append(self.main_label) # should always be included
