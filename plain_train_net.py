@@ -32,42 +32,12 @@ from detectron2.data import (
 from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.data import MetadataCatalog, DatasetCatalog
 
-# BECAUSE IT WON'T IMPORT FOR SOME REASON
-from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
-from typing import Optional
-def default_writers(output_dir: str, max_iter: Optional[int] = None):
-    """
-    Build a list of :class:`EventWriter` to be used.
-    It now consists of a :class:`CommonMetricPrinter`,
-    :class:`TensorboardXWriter` and :class:`JSONWriter`.
-    Args:
-        output_dir: directory to store JSON metrics and tensorboard events
-        max_iter: the total number of iterations
-    Returns:
-        list[EventWriter]: a list of :class:`EventWriter` objects.
-    """
-    return [
-        # It may not always print what you want to see, since it prints "common" metrics only.
-        CommonMetricPrinter(max_iter),
-        JSONWriter(os.path.join(output_dir, "metrics.json")),
-        TensorboardXWriter(output_dir),
-    ]
-
-from detectron2.evaluation import (
-    CityscapesInstanceEvaluator,
-    CityscapesSemSegEvaluator,
-    COCOEvaluator,
-    COCOPanopticEvaluator,
-    DatasetEvaluators,
-    LVISEvaluator,
-    PascalVOCDetectionEvaluator,
-    SemSegEvaluator,
-    inference_on_dataset,
-    print_csv_format,
-)
+from detectron2.evaluation import PascalVOCDetectionEvaluator
 from detectron2.modeling import build_model
-from detectron2.solver import build_lr_scheduler, build_optimizer
+from detectron2.solver import build_lr_scheduler # , buld_optimizer
 from detectron2.utils.events import EventStorage
+
+from helpers import save_sample, default_writers
 
 logger = logging.getLogger("detectron2")
 
@@ -80,23 +50,6 @@ def get_evaluator(cfg, dataset_name, output_folder=None):
     script and do not have to worry about the hacky if-else logic here.
     """
     return PascalVOCDetectionEvaluator(dataset_name)
-
-
-def do_test(cfg, model):
-    results = OrderedDict()
-    dataset_name = cfg.DATASETS.TEST[1]
-    data_loader = build_detection_test_loader(cfg, dataset_name)
-    evaluator = get_evaluator(
-        cfg, dataset_name, os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
-    )
-    results_i = inference_on_dataset(model, data_loader, evaluator)
-    results[dataset_name] = results_i
-    if comm.is_main_process():
-        logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-        print_csv_format(results_i)
-    if len(results) == 1:
-        results = list(results.values())[0]
-    return results
 
 from detectron2.engine.hooks import HookBase
 from detectron2.evaluation import inference_context
@@ -137,15 +90,15 @@ def build_eval_loader(dataset, *, mapper, sampler=None, num_workers=0, batch_siz
   return data_loader
 
 from augmentor import DummyAlbuMapper
-
+from helpers import build_optimizer
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True):
     model.train()
     optimizer = build_optimizer(cfg, model) # TODO: This returns an SGD optimizer, maybe change to ADAM
-    # scheduler = build_lr_scheduler(cfg, optimizer)
+    scheduler = build_lr_scheduler(cfg, optimizer)
     # either this or "reduce on plateau", reduce on plateau has less hyperparams but might be worse? idk not much research on 
     # lr scheduling pros and cons.
-    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=cfg.SOLVER.BASE_LR, max_lr=cfg.SOLVER.BASE_LR*2,step_size_up=5,mode="triangular2")
+    #scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=cfg.SOLVER.BASE_LR, max_lr=cfg.SOLVER.BASE_LR*2,step_size_up=5,mode="triangular2")
 
     checkpointer = DetectionCheckpointer(
         model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler
@@ -164,14 +117,6 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
 
     # compared to "train_net.py", we do not support accurate timing and
     # precise BN here, because they are not trivial to implement in a small training 
-
-    # augmentations are those that are the strategies, those are the ones
-    # that should be used. Transformations are deterministic operations 
-    # used by the (potentially random) augmentations. 
-    #
-    # NOTE: I don't think I'll implement elastic transform, mostly needed for 
-    # medical though since natural scale objects don't usually warp like that
-    # in photos.
     data_loader = build_detection_train_loader(
       dataset=DatasetCatalog.get(cfg.DATASETS.TRAIN[0]), 
       mapper=DummyAlbuMapper(cfg, is_train=True),
@@ -181,7 +126,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
 
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
-          cfg.TEST.EVAL_PERIOD,
+          cfg.TEST.EVAL_PERIOD * 3,
           model,
           "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
           build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
@@ -223,27 +168,10 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
             # ):
             if iteration % 100 == 0:
               model.eval()
-              with torch.no_grad():
-                outputs = model(data)
-                #print(data[0]["image"])
-                img = data[0]["image"]
-                # print(data[0])
-                # exit(0)
-                from detectron2.data import detection_utils as utils
-                orig = utils.read_image(data[0]['file_name'], format="RGB")
-                #print(img.detach().cpu().numpy()[:,:,::-1])
-                # permute C, H, W format to H, W, C format and flip C from BGR to RGB
-                v = Visualizer(img.permute(1,2,0).numpy()[:,:,::-1], # = img[:,:,::-1] in numpy
-                #v = Visualizer(orig[:,:,::-1], # = img[:,:,::-1] in numpy
-                    metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
-                    scale=1)
-                #out = v.draw_instance_predictions(outputs[0]["instances"].to("cpu"))
-                out = v.draw_dataset_dict(data[0])
-                cv2.imshow('sample.jpg', out.get_image())
-                cv2.waitKey()
-                cv2.destroyWindow('sample.jpg')
-                exit(0)
+              save_sample(cfg, model, data[0], "sample.jpg")
               model.train()
+            
+            # TODO: Uncomment for early stopping
             stop_early = early_stopping.after_step(iteration, max_iter, storage)
             # Compared to "train_net.py", the test results are not dumped to EventStorage
             comm.synchronize()
@@ -262,25 +190,6 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
 from datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 
 
-def setup(args):
-    """
-    Create configs and perform basic setups.
-    """
-    if args.dataset == "PascalVOC2007":
-      names = list(pascal_voc.CLASS_NAMES)
-      ds = CustomDataset(names, "person", splits)
-      (split_names, cfg, chosen_labels) = ds.subset("voc", 2, percentage=0.2)
-      cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
-      #cfg.freeze()
-      default_setup(
-          cfg, args
-      )  # if you don't like any of the default setup, write your own setup code
-      return cfg
-    else:
-      raise NotImplementedError(
-            f"Dataset {args.dataset} is not supported"
-        )
-
 # TODO: Abstract setup (config, metadata stuff)
 # TODO: LR search
 
@@ -291,6 +200,7 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
   lrs = 10 ** powers
   best_val = float('inf')
   best_lr = 0
+  losses = []
   for lr in lrs:
     # do setup 
     cfg.SOLVER.BASE_LR = float(lr)
@@ -298,6 +208,7 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
     model = build_model(cfg)
     # train 5 epochs
     val_loss = do_train(cfg, model, resume=False, use_early_stopping=False) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
+    #losses.append() # TODO: Add logging of loss every n:th epoch during training.
     # calc val loss at the end
     if val_loss < best_val:
       best_val = val_loss
@@ -322,20 +233,7 @@ def extract_dataset(dataset_name, main_label):
 
 from detectron2 import model_zoo
 from detectron2.engine import DefaultPredictor
-from detectron2.utils.visualizer import Visualizer
 import random 
-import cv2
-def save_sample(img):
-  predictor = DefaultPredictor(cfg)
-  dataset_dicts = DatasetCatalog.get(dataset_name)
-  for d in random.sample(dataset_dicts, 3):    
-    im = cv2.imread(d["file_name"])
-    outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
-    v = Visualizer(im[:, :, ::-1],
-                    metadata=MetadataCatalog.get(dataset_name), 
-                    scale=0.5)
-    out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-    cv2.imshow(out.get_image()[:, :, ::-1])
 
 #TODO: Look into data loaders and add augmentations to them.
 def base_experiment(dataset):
@@ -344,26 +242,17 @@ def base_experiment(dataset):
   # no complementaries
   ds, _ = dataset.subset(args.dataset + "_no_complementary_labels")
 
-  # build config for it once in beginning (can do it once in 
-  # the beginning since dataset will be the same for this 
-  # experiment, no randomness involved)
-
   cfg = get_cfg()
 
-  # These are the augmentations im thinking abt using. 
-  # Basically shift/scale/rotate, some sort of brightness/contrast manip,
-  # flip, cutting out a rectangle, and blurring the image. CLAHE and blur 
-  # might contradict each other a bit which in their purpose but at the 
-  # same time, one provides better brightness variation and one provides 
-  # blur to focus on the overall picture. So in a sense they complement 
-  # each other as well.
-  cfg.INPUT.ALBUMENTATIONS = "./augs.json"
-
-  # default is BGR for NO reason except it's nice with opencv. 
-  # HOWEVER Visualizer wants RGB to conform with Matplotlib. 
-  # BUT I want RGB for albumentations without copying and flipping the tensor manually.
-  #cfg.INPUT.FORMAT = "RGB"
   cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
+  
+  cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+  cfg.INPUT.FORMAT = "BGR"
+
+  # enables mixed precision, not super useful on my local GPU but might be free 
+  # performance boost on remote!
+  cfg.SOLVER.AMP.ENABLED = True
+
   cfg.DATASETS.TRAIN = (ds[0],) # training name
   cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
   cfg.DATALOADER.NUM_WORKERS = 8
@@ -371,6 +260,7 @@ def base_experiment(dataset):
   cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
+  #cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05
   
   #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
   
@@ -387,11 +277,11 @@ def base_experiment(dataset):
   cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
 
   cfg.TEST.EVAL_PERIOD = 0
-  print("Entering lr search... ")
-  lr = lr_search(cfg, resolution=2, n_epochs=1)
-  print("lr search finished, optimal lr is", lr)
-  cfg.SOLVER.BASE_LR = float(lr) # could instead be assigned to cfg in lr_search but whatevs
-  for i in range(2): # repeat many times
+  # print("Entering lr search... ")
+  # lr = lr_search(cfg, resolution=2, n_epochs=1)
+  # print("lr search finished, optimal lr is", lr)
+  cfg.SOLVER.BASE_LR = float(1e-5) # could instead be assigned to cfg in lr_search but whatevs
+  for i in range(1): # repeat many times
     model = build_model(cfg)
     # set evaluation to occur every epoch instead of only in end
     cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))

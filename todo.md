@@ -20,5 +20,21 @@ Things to reconsider (try looking up papers that discusses these things in low d
 
 Current TODO: 
 * Plot augmentation just to see that it works, do it within the mapper, no need to use the full model just some default pretrained model works.
+  * ended up having bugs in the augmentations so good thing i did this!
 * Refactor code
 * Hyperparameter search on base experiment.
+
+---------------------------
+Current TODO:
+* Write code so that it returns loss on the "training data" from throughout the training. 
+* Write code that plots the loss evolution of multiple runs. Using matplotlib.
+* Fix code for lr search so that it is only applied once in a special script.
+  * Also fix so that it uses the training data as well, not the validation data. But still use val data for early stopping. In other words exactly same setup as normal training.
+
+Done today:
+* Use Adam
+* Write simple plot code for a list of list of points as a function of number of iterations assuming identical batch size.
+* Use default lr scheduler not cyclic, so multistep scheduler.
+* TODO: Return losses throughout training (not every epoch but like every n:th). Use this and the n to plot different loss graphs and see which lr is actually best rather than just the one with best at the end.
+* Ran experiment with only person, full data even no annotation images. Got pretty good but took long, also still had images e.g cows or car lights mistaken as human. Ran for 11239 iterations, stopped on 3rd early stopping check.
+* NOOOOOTEEEEEE: Detectron2 removes images that physically has no "annotations"-key in them, NOTTTTTTT images with ds\["annotations"\] = []. So I have had to manually change ds creator to include/exclude images to test empty vs no empty images instead. 

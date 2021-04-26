@@ -39,9 +39,9 @@ class DummyAlbuMapper:
 
         # Reads image in format H, W, C. C is in color format self.img_format 
         # (usually BGR because default models in detectron2 use that)
-        print(self.img_format)
+        #print(self.img_format)
         img = utils.read_image(dataset_dict['file_name'], format=self.img_format)
-        print("SHAPE OF IMG", img.shape)
+        #print("SHAPE OF IMG", img.shape)
 
         boxes = [ann['bbox'] for ann in dataset_dict['annotations']]
         labels = [ann['category_id'] for ann in dataset_dict['annotations']]

@@ -90,5 +90,5 @@ class LossEvalHook:
     if is_final or (self._period > 0 and next_iter % self._period == 0):
         (_, stop_early) = self._do_loss_eval(cur_iter, storage)
         return stop_early
-    print("validation loss hook finished!")
+      #print("validation loss hook finished!")
     return False

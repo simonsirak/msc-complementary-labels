@@ -132,3 +132,4 @@ dmypy.json
 VOC2007/
 VOC2012/
 output/
+experimental_results/

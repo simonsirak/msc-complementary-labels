@@ -8,15 +8,15 @@ import albumentations as A
 # blur to focus on the overall picture. So in a sense they complement 
 # each other as well.
 transform = A.Compose([
-  # A.HorizontalFlip(p=0.5),
-  # A.ShiftScaleRotate(p=0.5, rotate_limit=[-15, 15]), 
-  # A.OneOf([
-  #   A.CLAHE(p=0.65), # makes edges more clear by effective use of color (lightness?) spectrum
-  #   A.ColorJitter(p=0.25),
-  #   A.NoOp(p=0.1)
-  # ], p=1),
-  # A.Cutout(num_holes=1, max_h_size=60, max_w_size=60, fill_value=122, p=0.5),
-  # A.Blur(p=0.5)
+  A.HorizontalFlip(p=0.5),
+  A.ShiftScaleRotate(p=0.5, rotate_limit=[-15, 15]), 
+  A.OneOf([
+    A.CLAHE(p=0.65), # makes edges more clear by effective use of color (lightness?) spectrum
+    A.ColorJitter(p=0.25),
+    A.NoOp(p=0.1)
+  ], p=1),
+  A.Cutout(num_holes=1, max_h_size=60, max_w_size=60, fill_value=122, p=0.5),
+  A.Blur(p=0.5)
 ], p=1, bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_id"]))
 # the label_fields=["category_id"] creates a key that will be assigned during augmentation 
 # and paired with the output image after augmentation, e.g labels. But can be any data that 
