@@ -28,6 +28,7 @@ class DummyAlbuMapper:
     def __init__(self, cfg, is_train=True):
         self.aug = self._get_aug(cfg.INPUT.ALBUMENTATIONS)
         self.img_format = cfg.INPUT.FORMAT
+        self.is_train = is_train
         #TODO: BoxMode based on added custom cfg key since it varies based on dataset.
             
     def _get_aug(self, arg):
@@ -46,9 +47,11 @@ class DummyAlbuMapper:
         boxes = [ann['bbox'] for ann in dataset_dict['annotations']]
         labels = [ann['category_id'] for ann in dataset_dict['annotations']]
 
-        # albumentations wants RGB format so we reverse ASSUMING BGR IS THE CURRENT FORMAT
-        augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
-
+        if self.is_train:
+          # albumentations wants RGB format so we reverse ASSUMING BGR IS THE CURRENT FORMAT
+          augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
+        else: 
+          augm_annotation = {'category_id': labels, 'bboxes': boxes, 'image': img[:,:,::-1]}
         img = augm_annotation['image'][:,:,::-1]
         h, w, _ = img.shape
 
@@ -57,7 +60,7 @@ class DummyAlbuMapper:
 
         #print("IMAGES AFTER ALBUMENTATIONS", img.transpose(2, 0, 1))
         augm_boxes = np.array(augm_annotation['bboxes'], dtype=np.float32)
-        # print(augm_boxes)
+        #print(augm_boxes)
         # exit(0)
         # sometimes bbox annotations go beyond image 
         #augm_boxes[:, :] = augm_boxes[:, :].clip(min=[0, 0, 0, 0], max=[w, h, w, h])

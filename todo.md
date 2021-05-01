@@ -31,7 +31,7 @@ Current TODO:
 * Fix code for lr search so that it is only applied once in a special script.
   * Also fix so that it uses the training data as well, not the validation data. But still use val data for early stopping. In other words exactly same setup as normal training.
 
-Done today:
+Done today (2021-04-27):
 * Use Adam
 * Write simple plot code for a list of list of points as a function of number of iterations assuming identical batch size.
 * Use default lr scheduler not cyclic, so multistep scheduler.
@@ -39,3 +39,25 @@ Done today:
 * Ran experiment with only person, full data even no annotation images. Got pretty good but took long, also still had images e.g cows or car lights mistaken as human. Ran for 11239 iterations, stopped on 3rd early stopping check.
 * NOOOOOTEEEEEE: Detectron2 removes images that physically has no "annotations"-key in them, NOTTTTTTT images with ds\["annotations"\] = []. So I have had to manually change ds creator to include/exclude images to test empty vs no empty images instead. 
 * Ran experiment with only person, data excluding images with no annotations. Also seems like pretty good results. Both experiments seem to have quick stagnation though, so probably need to reduce learning rate earlier than the preset because only 1 label is used probably.
+* notation [see implementation here](https://github.com/facebookresearch/detectron2/blob/master/detectron2/modeling/roi_heads/fast_rcnn.py)
+  * gt = ground truth
+  * cls_accuracy = fraction of annotated boxes that were correctly classified as it's respective gt class or correctly classified as background (bg).
+  * false_negative = index out (extract) the predictions that SHOULD be of any foreground class. Then, count how many of these were classified as background boxes. Then, divide this by the number of foreground (fg) images there SHOULD be, that is the false negative rate (how many were incorrectly classified as background).
+  * fg_cls_accuracy: extract the predictions that SHOULD be any foreground class, check how many of those are of the correct class. For a single label, this is essentially the complement of false_negative.
+
+Done today (2021-04-28):
+* LR search for 0 comp labels in pascal voc resolution 10, found that lr 0.0001 works best i.e 1e-4. Didn't need early stopping after 4 epochs meaning it could see improvement beyond that which is also a nice sign.
+* Also did manual testing and investigation of the parameters. It seems that loss_cls and loss_reg are the ones that are noisiest and highest, the others seem to work fine. Really weird. Perhaps this means that one half of the net is acting up? Yes, it seems like the box head (that predicts the class and location of a box) has the worst loss. But it also seems like the RPN severely overfit to the train data since the box sizes are very bad on test data.
+
+TODO:
+* during evaluation, have 0.05. But during visualization, have 0.5 or higher (threshold/NMS? Whichever one is 0.05 by default).
+  * Fixed, although needs to be done at model building time, not just randomly afterwards.
+* Look into potential bugs in visualization
+  * Fixed, I never actually loaded the model during evaluation lmao.
+  * Also, configuration of thresholds etc is done ONCE during model construction, cannot be arbitrarily changed afterwards. If you want to evaluate and visualize using same model, you should load two different models.
+  * Also, I noticed one could use [visualize_training for visualization](https://github.com/facebookresearch/detectron2/blob/master/detectron2/modeling/meta_arch/rcnn.py#L87) 
+* mAP COCO on trained models
+* Big initial drops in loss is common in obj. det.
+* Go for including empty images, and don't filter out empty images through detectron2. This is because it is natural to have images e.g that don't have tumors, so contextualizing "otherwise empty images" is a valid use-case.
+* Look for obj. det. dataset or consider reusing CSAW from segmentation task.
+* Discuss with kevin whether voc+coco, or just voc or just coco. But pascal has fewer instances per image compared to coco.

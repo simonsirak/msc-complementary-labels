@@ -61,7 +61,7 @@ class LossEvalHook:
 
     self._latest_loss = mean_loss
     if self._latest_loss < self._min_loss:
-      self._patience = 0
+      self._cur_patience = 0
       self._min_loss = self._latest_loss
       self._checkpointer.save(self._model_name + "_" + str(cur_iter))
     else:

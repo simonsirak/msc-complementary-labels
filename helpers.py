@@ -3,10 +3,15 @@ import cv2
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 from detectron2.data import detection_utils as utils
+import copy
+from augmentor import DummyAlbuMapper
 
-def save_sample(cfg, model, data_dict, dst_path):
+def save_sample(cfg, model, data_dict, dst_path, show=False):
+  old_threshold = cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST
   with torch.no_grad():
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
     outputs = model([data_dict])
+
     img = data_dict["image"]
     orig = utils.read_image(data_dict['file_name'], format="BGR")
     # permute C, H, W format to H, W, C format and flip C from BGR to RGB
@@ -14,10 +19,15 @@ def save_sample(cfg, model, data_dict, dst_path):
         metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
         scale=1)
     out = v.draw_instance_predictions(outputs[0]["instances"].to("cpu"))
-    #out = v.draw_dataset_dict(data[0])
-    cv2.imwrite(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
-    # cv2.waitKey()
-    # cv2.destroyWindow('sample.jpg')
+    #out = v.draw_dataset_dict(data_dict)
+
+    if show:
+      cv2.imshow(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
+      cv2.waitKey()
+      cv2.destroyWindow(dst_path)
+    else:
+      cv2.imwrite(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = old_threshold
 
 import os 
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
@@ -56,8 +66,8 @@ def plot_runs(points_list):
     #plt.savefig("face" + str(int(latent_size)) + ".png", bbox_inches="tight")
   plt.show()
 
-from detectron2.solver import get_default_optimizer_params
-import torch 
+# because apparently release 0.4 is different on github and what i have :)
+from detectron_build import *
 
 def build_optimizer(cfg, model):
   """
@@ -74,7 +84,7 @@ def build_optimizer(cfg, model):
 
   # NOTE: If support for gradient clipping is desired, you need to wrap this 
   # in "maybe_add_gradient_clipping" function from same place as get_default_optimizer_params
-  return  torch.optim.Adam(
+  return maybe_add_gradient_clipping(cfg, torch.optim.Adam)(
       params,
       lr=cfg.SOLVER.BASE_LR,
       weight_decay=cfg.SOLVER.WEIGHT_DECAY,

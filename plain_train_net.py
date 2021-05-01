@@ -126,7 +126,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
 
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = LossEvalHook(
-          cfg.TEST.EVAL_PERIOD * 3,
+          cfg.TEST.EVAL_PERIOD,
           model,
           "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
           build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
@@ -137,7 +137,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
             #aspect_ratio_grouping=False
           ),
           checkpointer,
-          patience=0
+          patience=1
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
@@ -207,14 +207,16 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
     cfg.SOLVER.MAX_ITER = n_epochs * int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH))
     model = build_model(cfg)
     # train 5 epochs
-    val_loss = do_train(cfg, model, resume=False, use_early_stopping=False) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
+    val_loss = do_train(cfg, model, resume=False, use_early_stopping=True) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
     #losses.append() # TODO: Add logging of loss every n:th epoch during training.
     # calc val loss at the end
     if val_loss < best_val:
       best_val = val_loss
       best_lr = lr
+    print("Tested LR", lr, "with validation loss", val_loss)
+    
 
-  print("LR Search done: Best LR is", best_lr, "with validation loss", val_loss)
+  print("LR Search done: Best LR is", best_lr, "with validation loss", best_val)
   return best_lr
 
 # construct dataset base dictionaries of each split
@@ -260,7 +262,7 @@ def base_experiment(dataset):
   cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
-  #cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
   
   #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
   
@@ -270,7 +272,7 @@ def base_experiment(dataset):
   # around that problem. (the math expression results
   # in 1 epoch of training)
   cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
-  
+  #cfg.SOLVER.CLIP_GRADIENTS.ENABLED = True 
   #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
 
   cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
@@ -280,12 +282,13 @@ def base_experiment(dataset):
   # print("Entering lr search... ")
   # lr = lr_search(cfg, resolution=2, n_epochs=1)
   # print("lr search finished, optimal lr is", lr)
-  cfg.SOLVER.BASE_LR = float(1e-5) # could instead be assigned to cfg in lr_search but whatevs
+  cfg.SOLVER.BASE_LR = float(1e-4) # could instead be assigned to cfg in lr_search but whatevs
+  cfg.SOLVER.STEPS = (1000, 2000)
   for i in range(1): # repeat many times
     model = build_model(cfg)
     # set evaluation to occur every epoch instead of only in end
     cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
-    cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    cfg.TEST.EVAL_PERIOD = 500
     do_train(cfg, model)
     #do_test(cfg, model)
   pass
@@ -318,10 +321,124 @@ def main(args):
   default_setup(base_cfg, args)
   
   print("Dataset loaded successfully, basic configuration completed.")
+
+  if args.lr:
+    main_label = args.main_label
+
+    # no complementaries
+    ds, _ = base_dataset.subset(args.dataset, nb_comp_labels=0)
+
+    cfg = get_cfg()
+
+    cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
+    
+    cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+    cfg.INPUT.FORMAT = "BGR"
+
+    # enables mixed precision, not super useful on my local GPU but might be free 
+    # performance boost on remote!
+    cfg.SOLVER.AMP.ENABLED = True
+
+    cfg.DATASETS.TRAIN = (ds[0],) # training name
+    cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
+    cfg.DATALOADER.NUM_WORKERS = 8
+    
+    cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
+    # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
+    cfg.TEST.EVAL_PERIOD = 500 # only check validation loss at the end of the lr search
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05 # for evaluation
+    
+    #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
+    
+    # this will vary for the subset experiments. Also, 
+    # detectron2 removes unannotated images by default
+    # but only working on images with main label works 
+    # around that problem. (the math expression results
+    # in 1 epoch of training)
+    cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    #cfg.SOLVER.CLIP_GRADIENTS.ENABLED = True 
+    #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
+
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
+    cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
+
+    cfg.SOLVER.STEPS = (1000, 2000)
+    best_lr = lr_search(cfg, resolution=10, n_epochs=4)
+
+    print("best lr is", best_lr)
   if args.base:
     print("Entering base experiment...")
     base_experiment(base_dataset)
     print("Base experiment finished!")
+
+  if args.eval:
+    main_label = args.main_label
+    # no complementaries
+    ds, _ = base_dataset.subset(args.dataset + "_no_complementary_labels")
+
+    cfg = get_cfg()
+
+    cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
+    print("WEIGHTS = ", cfg.MODEL.WEIGHTS)
+    cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+    cfg.INPUT.FORMAT = "BGR"
+
+    # enables mixed precision, not super useful on my local GPU but might be free 
+    # performance boost on remote!
+    cfg.SOLVER.AMP.ENABLED = True
+
+    cfg.DATASETS.TRAIN = (ds[0],) # training name
+    cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
+    cfg.DATALOADER.NUM_WORKERS = 8
+    
+    cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
+    # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
+    cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5 # for visualization, use 0.5; for evaluation, use 0.05
+    
+    #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
+    
+    # this will vary for the subset experiments. Also, 
+    # detectron2 removes unannotated images by default
+    # but only working on images with main label works 
+    # around that problem. (the math expression results
+    # in 1 epoch of training)
+    cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    
+    #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
+
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
+    cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
+
+    cfg.TEST.EVAL_PERIOD = 0
+    # print("Entering lr search... ")
+    # lr = lr_search(cfg, resolution=2, n_epochs=1)
+    # print("lr search finished, optimal lr is", lr)
+    cfg.SOLVER.BASE_LR = float(1e-4) # could instead be assigned to cfg in lr_search but whatevs
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/testing/output", "best_model_999.pth")  # path to the model we just trained
+    #print(cfg.MODEL.WEIGHTS)
+    cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/new_base_with_annotations_using_1e-4lr_patience1/output", "best_model_2499.pth")  # path to the model we just trained
+    # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
+    # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
+    
+    model = build_model(cfg)
+    DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)  # load a file, usually from cfg.MODEL.WEIGHTS
+    model.eval()
+
+    dataset_dicts = DatasetCatalog.get(ds[2])
+    data_loader = build_detection_train_loader(
+      dataset=dataset_dicts, 
+      mapper=DummyAlbuMapper(cfg, is_train=False),
+      total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+      num_workers=cfg.DATALOADER.NUM_WORKERS
+    )
+    for data, iteration in zip(data_loader, range(len(dataset_dicts))):
+      mapped_data = data[0]
+      save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
+      if iteration == 2:
+        break
 
   # cfg = setup(args)
 
@@ -398,6 +515,9 @@ Run on multiple machines:
 
     parser.add_argument("--num-comp-labels", type=int, default=0, help="number of complementary labels for vary label experiments")
     parser.add_argument("--dataset-fraction", type=float, default=0.5, help="fraction of data to use for experiments; default half for all non-dataset related experiments")
+
+    parser.add_argument("--eval", action="store_true", default=False, help="perform evaluation")
+    parser.add_argument("--lr", action="store_true", default=False, help="learning rate search")
 
     # TODO: Maybe an argument for datasets directory.
 
