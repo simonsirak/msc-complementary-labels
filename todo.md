@@ -57,7 +57,15 @@ TODO:
   * Also, configuration of thresholds etc is done ONCE during model construction, cannot be arbitrarily changed afterwards. If you want to evaluate and visualize using same model, you should load two different models.
   * Also, I noticed one could use [visualize_training for visualization](https://github.com/facebookresearch/detectron2/blob/master/detectron2/modeling/meta_arch/rcnn.py#L87) 
 * mAP COCO on trained models
+  * Fixed, had to mod the COCOEvaluator. There is a potential bug but as long as we have proper testing data that includes at least 1 instance of each used label we should be good.
 * Big initial drops in loss is common in obj. det.
 * Go for including empty images, and don't filter out empty images through detectron2. This is because it is natural to have images e.g that don't have tumors, so contextualizing "otherwise empty images" is a valid use-case.
 * Look for obj. det. dataset or consider reusing CSAW from segmentation task.
+  * [New dataset](https://nucls.grand-challenge.org/NuCLS/) but annotated largely by non-pathologists, so probably pretty noisy (about 50% was approved by pathologists, the rest was not, but NPs got examples to go off of. However, still feel like this is... bad). Has many classes tho, like 11 that can be included in analysis, they are grouped as well.
+  * [CSAW-S](https://zenodo.org/record/4030660#.YJGG4SaxU5l), but convert segmentations to bboxes should be straight forward enough. The labels to keep are cancer, calcification, lymph node, foreign object, nipple, non-mammary tissue, text and perhaps also pectoral muscle/mammary gland? Let's say 7 guaranteed and maybe 9. 6 of more worth than the others.
 * Discuss with kevin whether voc+coco, or just voc or just coco. But pascal has fewer instances per image compared to coco.
+* Currently working on getting datasets to not filter out empty images as well as logging data.
+  * done, needed to create logger that also backs up to log file
+* TODO: Still need to fix logger in COCOEvaluatorMODDED, not logging the full AP table, probably again due to logging levels or not setting it up using setup_logger.
+
+Final things before "automating" rest of process; clean up code. set up csaw-s for object detection. modify code to run lr search for one epoch (not with early stopping since then we have just trained a whole thing lol). perform lr search once on no comp labels to get base lr for next few numbers of comp labels, then start using the settings used for full comp label set (I actually also train on pretrained imagenet, dope). 

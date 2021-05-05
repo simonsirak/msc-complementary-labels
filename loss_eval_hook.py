@@ -63,7 +63,7 @@ class LossEvalHook:
     if self._latest_loss < self._min_loss:
       self._cur_patience = 0
       self._min_loss = self._latest_loss
-      self._checkpointer.save(self._model_name + "_" + str(cur_iter))
+      self._checkpointer.save(self._model_name)
     else:
       self._cur_patience += 1
       if self._cur_patience > self._patience:
