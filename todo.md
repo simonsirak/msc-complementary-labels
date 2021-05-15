@@ -74,3 +74,5 @@ TODO:
 Final things before "automating" rest of process; clean up code. set up csaw-s for object detection. modify code to run lr search for one epoch (not with early stopping since then we have just trained a whole thing lol). perform lr search once on no comp labels to get base lr for next few numbers of comp labels, then start using the settings used for full comp label set (I actually also train on pretrained imagenet, dope). 
 
 Be VERY careful that when loading a model for evaluation, the 1. correct comp labels and 2. the correct order is used!!!!!!!!!!!!
+
+Final things before "automating" rest of process; clean up code. set up csaw-s for object detection. modify code to run lr search for one epoch (not with early stopping since then we have just trained a whole thing lol). perform lr search once on no comp labels to get base lr for next few numbers of comp labels, then start using the settings used for full comp label set (I actually also train on pretrained imagenet, dope). 
