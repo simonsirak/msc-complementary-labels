@@ -33,6 +33,8 @@ from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.data import MetadataCatalog, DatasetCatalog
 
 from detectron2.evaluation import PascalVOCDetectionEvaluator
+from COCOEvaluatorMODDED import COCOEvaluator # my modded version
+
 from detectron2.modeling import build_model
 from detectron2.solver import build_lr_scheduler # , buld_optimizer
 from detectron2.utils.events import EventStorage
@@ -141,7 +143,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
-        #stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
 
@@ -237,12 +239,46 @@ from detectron2 import model_zoo
 from detectron2.engine import DefaultPredictor
 import random 
 
+def evaluate(cfg, model):
+  #cfg.MODEL.WEIGHTS = os.path.join("./output", "best_model.pth")  # path to the model we just trained
+  #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
+  #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+  #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/new_base_with_annotations_using_1e-4lr_patience1/output", "best_model_2499.pth")  # path to the model we just trained
+  # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
+  # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
+  
+  #model = build_model(cfg)
+  #DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)  # load a file, usually from cfg.MODEL.WEIGHTS
+  #model.eval()
+
+  # build data loader, essentially equivalent to test loader but 
+  # with arbitrary batch size because inference time is not a metric I want.
+  data_loader = build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
+    DatasetCatalog.get(cfg.DATASETS.TEST[1]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
+    batch_size=cfg.SOLVER.IMS_PER_BATCH,
+    num_workers=cfg.DATALOADER.NUM_WORKERS,
+    mapper=DatasetMapper(cfg,False), #do_train=True means we are in training mode.
+    #aspect_ratio_grouping=False
+  )
+
+  with torch.no_grad():
+    def get_all_inputs_outputs():
+      for data in data_loader:
+        yield data, model(data)
+
+    evaluator = COCOEvaluator(cfg.DATASETS.TEST[1], output_dir=cfg.OUTPUT_DIR, distributed=False, tasks=("bbox",))
+    evaluator.reset()
+    for inputs, outputs in get_all_inputs_outputs():
+      evaluator.process(inputs, outputs)
+    print("begin coco evaluation...")
+    eval_results = evaluator.evaluate()
+    print("finished coco evaluation!")
 #TODO: Look into data loaders and add augmentations to them.
 def base_experiment(dataset):
   main_label = args.main_label
 
   # no complementaries
-  ds, _ = dataset.subset(args.dataset + "_no_complementary_labels")
+  ds, _ = dataset.subset(args.dataset + "_no_complementary_labels", nb_comp_labels=3)
 
   cfg = get_cfg()
 
@@ -262,7 +298,7 @@ def base_experiment(dataset):
   cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05 # NOTE: Cannot do this and evaluate in base experiment as well, must rebuild model with 0.05.
   
   #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
   
@@ -271,25 +307,29 @@ def base_experiment(dataset):
   # but only working on images with main label works 
   # around that problem. (the math expression results
   # in 1 epoch of training)
-  cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+  #cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
   #cfg.SOLVER.CLIP_GRADIENTS.ENABLED = True 
   #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
 
-  cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
-  cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
+  cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
+  cfg.MODEL.RETINANET.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
 
   cfg.TEST.EVAL_PERIOD = 0
   # print("Entering lr search... ")
   # lr = lr_search(cfg, resolution=2, n_epochs=1)
   # print("lr search finished, optimal lr is", lr)
   cfg.SOLVER.BASE_LR = float(1e-4) # could instead be assigned to cfg in lr_search but whatevs
-  cfg.SOLVER.STEPS = (1000, 2000)
+  #cfg.SOLVER.STEPS = (1000, 2000)
   for i in range(1): # repeat many times
     model = build_model(cfg)
     # set evaluation to occur every epoch instead of only in end
-    cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
-    cfg.TEST.EVAL_PERIOD = 500
+    # cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    cfg.TEST.EVAL_PERIOD = 5000
     do_train(cfg, model)
+
+    model.eval()
+    evaluate(cfg, model)
+    model.train()
     #do_test(cfg, model)
   pass
 
@@ -304,6 +344,7 @@ def main(args):
   dataset_name = args.dataset 
   main_label = args.main_label
   base_dataset = extract_dataset(dataset_name, main_label)
+  print(base_dataset.base_dict_func["train"][0]["file_name"])
   
   # default_setup literally only sets the cfg rng seed, the output directory, and whether cudnn.benchmark should be used.
   # I only load it because of the setup.
@@ -417,8 +458,9 @@ def main(args):
     cfg.SOLVER.BASE_LR = float(1e-4) # could instead be assigned to cfg in lr_search but whatevs
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/testing/output", "best_model_999.pth")  # path to the model we just trained
     #print(cfg.MODEL.WEIGHTS)
-    cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
-    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./output", "best_model.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
+    cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/new_base_with_annotations_using_1e-4lr_patience1/output", "best_model_2499.pth")  # path to the model we just trained
     # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
     # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
@@ -439,6 +481,88 @@ def main(args):
       save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
       if iteration == 2:
         break
+
+  if args.coco:
+    main_label = args.main_label
+    # no complementaries
+    ds, _ = base_dataset.subset(args.dataset, identity=True)
+
+    cfg = get_cfg()
+
+    cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_C4.yaml"))
+    print("WEIGHTS = ", cfg.MODEL.WEIGHTS)
+    cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+    cfg.INPUT.FORMAT = "BGR"
+
+    # enables mixed precision, not super useful on my local GPU but might be free 
+    # performance boost on remote!
+    cfg.SOLVER.AMP.ENABLED = True
+
+    cfg.DATASETS.TRAIN = (ds[0],) # training name
+    cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
+    cfg.DATALOADER.NUM_WORKERS = 8
+    
+    cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
+    # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
+    cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05 # for visualization, use 0.5; for evaluation, use 0.05
+    
+    #TODO: Also look into learning rate schedulers (i.e what type of decay/changes in base lr)
+    
+    # this will vary for the subset experiments. Also, 
+    # detectron2 removes unannotated images by default
+    # but only working on images with main label works 
+    # around that problem. (the math expression results
+    # in 1 epoch of training)
+    cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    
+    #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
+
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
+    cfg.MODEL.RETINANET.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
+
+    cfg.TEST.EVAL_PERIOD = 0
+    # print("Entering lr search... ")
+    # lr = lr_search(cfg, resolution=2, n_epochs=1)
+    # print("lr search finished, optimal lr is", lr)
+    cfg.SOLVER.BASE_LR = float(1e-4) # could instead be assigned to cfg in lr_search but whatevs
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/testing/output", "best_model_999.pth")  # path to the model we just trained
+    #print(cfg.MODEL.WEIGHTS)
+    
+    #cfg.MODEL.WEIGHTS = os.path.join("./output", "best_model.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
+    cfg.MODEL.WEIGHTS = os.path.join("./", "model_final_b1acc2.pkl")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/filter_empty_annotations_2_labels/output", "best_model.pth")  # path to the model we just trained
+    # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
+    # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
+    
+    model = build_model(cfg)
+    DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)  # load a file, usually from cfg.MODEL.WEIGHTS
+    model.eval()
+
+    # build data loader, essentially equivalent to test loader but 
+    # with arbitrary batch size because inference time is not a metric I want.
+    data_loader = build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
+      DatasetCatalog.get(cfg.DATASETS.TEST[1]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
+      batch_size=cfg.SOLVER.IMS_PER_BATCH,
+      num_workers=cfg.DATALOADER.NUM_WORKERS,
+      mapper=DatasetMapper(cfg,False), #do_train=True means we are in training mode.
+      #aspect_ratio_grouping=False
+    )
+
+    with torch.no_grad():
+      def get_all_inputs_outputs():
+        for data in data_loader:
+          yield data, model(data)
+
+      evaluator = COCOEvaluator(ds[2], output_dir=cfg.OUTPUT_DIR, distributed=False, tasks=("bbox",))
+      evaluator.reset()
+      for inputs, outputs in get_all_inputs_outputs():
+        evaluator.process(inputs, outputs)
+      print("begin coco evaluation...")
+      eval_results = evaluator.evaluate()
+      print("finished coco evaluation!")
 
   # cfg = setup(args)
 
@@ -517,7 +641,10 @@ Run on multiple machines:
     parser.add_argument("--dataset-fraction", type=float, default=0.5, help="fraction of data to use for experiments; default half for all non-dataset related experiments")
 
     parser.add_argument("--eval", action="store_true", default=False, help="perform evaluation")
+    parser.add_argument("--coco", action="store_true", default=False, help="perform coco evaluation")
     parser.add_argument("--lr", action="store_true", default=False, help="learning rate search")
+    parser.add_argument("--input-dir", default="output", help="the directory to read input task-related data such as trained models. By default, uses the output of the current executiion")
+    parser.add_argument("--output-dir", default="output", help="the directory to output task-related data")
 
     # TODO: Maybe an argument for datasets directory.
 

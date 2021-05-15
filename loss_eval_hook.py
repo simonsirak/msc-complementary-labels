@@ -63,7 +63,7 @@ class LossEvalHook:
     if self._latest_loss < self._min_loss:
       self._cur_patience = 0
       self._min_loss = self._latest_loss
-      self._checkpointer.save(self._model_name + "_" + str(cur_iter))
+      self._checkpointer.save(self._model_name)
     else:
       self._cur_patience += 1
       if self._cur_patience > self._patience:
@@ -71,7 +71,7 @@ class LossEvalHook:
     storage.put_scalar('validation_loss', self._latest_loss)
     comm.synchronize()
 
-    return (losses, stop_early)
+    return (losses, False) # TODO: Maybe this when incorporating AP instead of loss.
           
   def _get_loss(self, data):
       # How loss is calculated on train_loop 

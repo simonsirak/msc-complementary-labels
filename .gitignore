@@ -133,3 +133,6 @@ VOC2007/
 VOC2012/
 output/
 experimental_results/
+CSAW-S/ 
+*.pkl
+csaw-s-obj.json
