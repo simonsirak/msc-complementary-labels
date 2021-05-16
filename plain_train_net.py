@@ -39,7 +39,7 @@ from detectron2.modeling import build_model
 from detectron2.solver import build_lr_scheduler # , buld_optimizer
 from detectron2.utils.events import EventStorage
 
-from helpers import save_sample, default_writers
+from helpers import save_sample, default_writers, load_csaw
 
 logger = logging.getLogger("detectron2")
 
@@ -223,7 +223,8 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
 
 # construct dataset base dictionaries of each split
 # and return a CustomDataset object
-def extract_dataset(dataset_name, main_label):
+import seg2obj
+def extract_dataset(dataset_name, main_label): # TODO: Add base path arg
   if dataset_name == "PascalVOC2007":
     labels = list(pascal_voc.CLASS_NAMES)
     base_dataset = {
@@ -231,7 +232,15 @@ def extract_dataset(dataset_name, main_label):
       "val": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "val", labels),
       "test": pascal_voc.load_voc_instances("VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007", "test", labels),
     }
-    return CustomDataset(labels, main_label, base_dataset)
+    return CustomDataset(labels, main_label, base_dataset, dataset_name)
+  elif dataset_name == "CSAW-S":
+    labels = seg2obj.OUTPUT_CLASSES
+    base_dataset = {
+      "train": load_csaw("csaw-s-obj-trainval.json", "train"),
+      "val": load_csaw("csaw-s-obj-trainval.json", "val"),
+      "test": load_csaw("csaw-s-obj-test.json", "test")
+    }
+    return CustomDataset(labels, main_label, base_dataset, dataset_name)
   else:
     raise NotImplementedError(f"Dataset {args.dataset} is not supported")
 
@@ -415,7 +424,7 @@ def main(args):
   if args.eval:
     main_label = args.main_label
     # no complementaries
-    ds, _ = base_dataset.subset(args.dataset + "_no_complementary_labels")
+    ds, _ = base_dataset.subset(args.dataset + "_no_complementary_labels", identity=True)
 
     cfg = get_cfg()
 
@@ -429,7 +438,7 @@ def main(args):
     cfg.SOLVER.AMP.ENABLED = True
 
     cfg.DATASETS.TRAIN = (ds[0],) # training name
-    cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
+    cfg.DATASETS.TEST = (ds[1],ds[2]) # validation, test names
     cfg.DATALOADER.NUM_WORKERS = 8
     
     cfg.SOLVER.IMS_PER_BATCH = 2 # batch size is 2 images due to limitations  
@@ -460,7 +469,7 @@ def main(args):
     #print(cfg.MODEL.WEIGHTS)
     #cfg.MODEL.WEIGHTS = os.path.join("./output", "best_model.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
-    cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+    #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/new_base_with_annotations_using_1e-4lr_patience1/output", "best_model_2499.pth")  # path to the model we just trained
     # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
     # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
@@ -476,9 +485,26 @@ def main(args):
       total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
       num_workers=cfg.DATALOADER.NUM_WORKERS
     )
+    from detectron2.data import detection_utils as utils
+    from detectron2.utils.visualizer import Visualizer
+    import cv2
+
     for data, iteration in zip(data_loader, range(len(dataset_dicts))):
       mapped_data = data[0]
-      save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
+      #save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
+      orig = utils.read_image(mapped_data['file_name'], format="BGR")
+      print(mapped_data['file_name'])
+      # permute C, H, W format to H, W, C format and flip C from BGR to RGB
+      v = Visualizer(orig[:,:,::-1], # = img[:,:,::-1] in numpy
+          metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
+          scale=0.2)
+      out = v.draw_dataset_dict(mapped_data)
+
+      
+      cv2.imshow('sample', out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
+      cv2.waitKey()
+      cv2.destroyWindow('sample')
+
       if iteration == 2:
         break
 
@@ -625,6 +651,7 @@ Run on multiple machines:
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
     parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
+    parser.add_argument("--dataset-path", default="./", help="the directory to the dataset")
     parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
  
     parser.add_argument("--seed", type=int, default=random.randint(0,1000), help="seed used for randomization")
@@ -645,6 +672,7 @@ Run on multiple machines:
     parser.add_argument("--lr", action="store_true", default=False, help="learning rate search")
     parser.add_argument("--input-dir", default="output", help="the directory to read input task-related data such as trained models. By default, uses the output of the current executiion")
     parser.add_argument("--output-dir", default="output", help="the directory to output task-related data")
+    
 
     # TODO: Maybe an argument for datasets directory.
 

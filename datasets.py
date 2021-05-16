@@ -24,12 +24,13 @@ from detectron2.utils.logger import setup_logger
 logger = setup_logger(output="./output", name="datasets")
 
 class CustomDataset:
-  def __init__(self, labels, main_label, base_dict_func):
+  def __init__(self, labels, main_label, base_dict_func, dataset_name):
     self.id = 0
     self.labels = labels # all labels (python list) in the order of the category id's of the detectron dataset dictionary
     self.main_label = main_label # main label
     self.base_dict_func = base_dict_func # func that returns a dict of standard format dict {"train": {}, "val": {}, "test": {}}
     self.logger = logging.getLogger("datasets")
+    self.dataset_name = dataset_name
   
   # currently only training dataset
   # TODO: Think about how to incorporate varying dataset size, 
@@ -139,22 +140,29 @@ class CustomDataset:
       if name in MetadataCatalog.list():
         MetadataCatalog.remove(name) # remove if exists
       MetadataCatalog.get(name).set(thing_classes=c2l)
-      if split in ["train", "val"]:
-        MetadataCatalog.get(name).set(dirname="VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007")
-      elif split == "test":
-        MetadataCatalog.get(name).set(dirname="VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007")
-      MetadataCatalog.get(name).set(split=split)
-      MetadataCatalog.get(name).set(year=2007) 
+      if self.dataset_name == "PascalVOC2007":
+        if split in ["train", "val"]:
+          MetadataCatalog.get(name).set(dirname="VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007")
+        elif split == "test":
+          MetadataCatalog.get(name).set(dirname="VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007")
+        MetadataCatalog.get(name).set(split=split)
+        MetadataCatalog.get(name).set(year=2007)
+      elif self.dataset_name == "CSAW-S":
+        MetadataCatalog.get(name).set(split=split)
+        MetadataCatalog.get(name).set(year=2020)
 
       print("SPLIT SIZE:", len(base_dicts[split]))
 
     self.id = self.id + 1
 
-    names.sort()
-    ordered_names = []
-    ordered_names.append(names[1])
-    ordered_names.append(names[2])
-    ordered_names.append(names[0])
+    if len(names) == 3:
+      names.sort()
+      ordered_names = []
+      ordered_names.append(names[1])
+      ordered_names.append(names[2])
+      ordered_names.append(names[0])
+    else:
+      ordered_names = names
     print(ordered_names)
     
     return (ordered_names, c2l)

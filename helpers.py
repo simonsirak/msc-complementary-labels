@@ -89,3 +89,40 @@ def build_optimizer(cfg, model):
       lr=cfg.SOLVER.BASE_LR,
       weight_decay=cfg.SOLVER.WEIGHT_DECAY,
   )
+
+import json 
+from detectron2.structures import BoxMode
+from copy import deepcopy
+def load_csaw(json_path, split="train"):
+  validation_split = ["000","001","012","018","025","030","034","038","053","062","068","075","083","127","131","139","156","181","245","249"]
+
+  if split == "train":
+    with open(json_path, 'r') as fr:
+      original_dataset = deepcopy(json.load(fr))
+      dataset = []
+      for sample in original_dataset:
+        if sample['image_id'].split('_')[0] not in validation_split:
+          dataset.append(sample) 
+          for annotation in sample['annotations']:
+            annotation['bbox_mode'] = BoxMode.XYXY_ABS
+  elif split == "val":
+    with open(json_path, 'r') as fr:
+      original_dataset = deepcopy(json.load(fr))
+      dataset = []
+      for sample in original_dataset:
+        if sample['image_id'].split('_')[0] in validation_split:
+          dataset.append(sample) 
+          for annotation in sample['annotations']:
+            annotation['bbox_mode'] = BoxMode.XYXY_ABS
+  elif split == "test":
+    with open(json_path, 'r') as fr:
+      original_dataset = deepcopy(json.load(fr))
+      dataset = []
+      for sample in original_dataset:
+        dataset.append(sample) 
+        for annotation in sample['annotations']:
+          annotation['bbox_mode'] = BoxMode.XYXY_ABS
+  else:
+    raise NotImplementedError(f"Dataset split {split} is not supported for CSAW-S")
+
+  return dataset
