@@ -21,14 +21,13 @@ from copy import copy, deepcopy
 import logging
 from detectron2.utils.logger import setup_logger
 
-logger = setup_logger(output="./output", name="datasets")
-
 class CustomDataset:
-  def __init__(self, labels, main_label, base_dict_func, dataset_name):
+  def __init__(self, labels, main_label, base_dict_func, dataset_name, log_dir):
     self.id = 0
     self.labels = labels # all labels (python list) in the order of the category id's of the detectron dataset dictionary
     self.main_label = main_label # main label
     self.base_dict_func = base_dict_func # func that returns a dict of standard format dict {"train": {}, "val": {}, "test": {}}
+    setup_logger(output=log_dir, name="datasets")
     self.logger = logging.getLogger("datasets")
     self.dataset_name = dataset_name
   
@@ -95,7 +94,7 @@ class CustomDataset:
           # DATASET
           comp_labels = copy(valid_labels)
           comp_labels.remove(self.main_label)
-          random.seed(seed) # TODO: Don't seed here, seed in the beginning of an experiment only. Otherwise it is not pseudorandom.
+          # random.seed(seed) # TODO: Don't seed here, seed in the beginning of an experiment only. Otherwise it is not pseudorandom.
           print("all complementary labels: ", comp_labels)
           c2l = random.sample(comp_labels, nb_comp_labels)
           c2l.append(self.main_label) # should always be included

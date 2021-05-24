@@ -138,3 +138,5 @@ CSAW-S/
 csaw-s-obj.json
 csaw-s-obj-trainval.json
 csaw-s-obj-test.json
+/hyperparam_search/
+/datasets/

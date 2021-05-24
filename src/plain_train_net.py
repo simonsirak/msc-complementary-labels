@@ -33,13 +33,13 @@ from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.data import MetadataCatalog, DatasetCatalog
 
 from detectron2.evaluation import PascalVOCDetectionEvaluator
-from COCOEvaluatorMODDED import COCOEvaluator # my modded version
+from util.COCOEvaluator import COCOEvaluator # my modded version
 
 from detectron2.modeling import build_model
 from detectron2.solver import build_lr_scheduler # , buld_optimizer
 from detectron2.utils.events import EventStorage
 
-from helpers import save_sample, default_writers, load_csaw
+from util.helpers import save_sample, default_writers, load_csaw
 
 logger = logging.getLogger("detectron2")
 
@@ -63,8 +63,7 @@ import time
 import datetime
 import numpy as np 
 
-from loss_eval_hook import LossEvalHook
-
+from util.loss_eval_hook import LossEvalHook
 
 from detectron2.data.samplers import InferenceSampler
 from detectron2.data.common import DatasetFromList, MapDataset
@@ -91,8 +90,8 @@ def build_eval_loader(dataset, *, mapper, sampler=None, num_workers=0, batch_siz
 
   return data_loader
 
-from augmentor import DummyAlbuMapper
-from helpers import build_optimizer
+from util.augmentor import DummyAlbuMapper
+from util.helpers import build_optimizer
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True):
     model.train()
@@ -143,7 +142,8 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
-        stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        #stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        stop_early = False
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
 
@@ -174,7 +174,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
               model.train()
             
             # TODO: Uncomment for early stopping
-            stop_early = early_stopping.after_step(iteration, max_iter, storage)
+            # stop_early = early_stopping.after_step(iteration, max_iter, storage)
             # Compared to "train_net.py", the test results are not dumped to EventStorage
             comm.synchronize()
 
@@ -189,7 +189,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True):
               break
     return early_stopping._latest_loss # for learning rate evaluation
 
-from datasets import CustomDataset
+from util.datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 
 
 # TODO: Abstract setup (config, metadata stuff)
@@ -209,7 +209,7 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
     cfg.SOLVER.MAX_ITER = n_epochs * int(round(len(DatasetCatalog.get(cfg.DATASETS.TEST[0])) / cfg.SOLVER.IMS_PER_BATCH))
     model = build_model(cfg)
     # train 5 epochs
-    val_loss = do_train(cfg, model, resume=False, use_early_stopping=True) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
+    val_loss = do_train(cfg, model, resume=False, use_early_stopping=False) # TODO: Use validation dataset, maybe by modding the config or adding option to do_train
     #losses.append() # TODO: Add logging of loss every n:th epoch during training.
     # calc val loss at the end
     if val_loss < best_val:
@@ -223,24 +223,24 @@ def lr_search(cfg, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
 
 # construct dataset base dictionaries of each split
 # and return a CustomDataset object
-import seg2obj
-def extract_dataset(dataset_name, main_label): # TODO: Add base path arg
+import scripts.generate_obj_csaws as csaws
+def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
   if dataset_name == "PascalVOC2007":
     labels = list(pascal_voc.CLASS_NAMES)
     base_dataset = {
-      "train": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "train", labels),
-      "val": pascal_voc.load_voc_instances("VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007", "val", labels),
-      "test": pascal_voc.load_voc_instances("VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007", "test", labels),
+      "train": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007"), "train", labels),
+      "val": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007"), "val", labels),
+      "test": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007"), "test", labels),
     }
-    return CustomDataset(labels, main_label, base_dataset, dataset_name)
+    return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
   elif dataset_name == "CSAW-S":
-    labels = seg2obj.OUTPUT_CLASSES
+    labels = csaws.OUTPUT_CLASSES
     base_dataset = {
       "train": load_csaw("csaw-s-obj-trainval.json", "train"),
       "val": load_csaw("csaw-s-obj-trainval.json", "val"),
       "test": load_csaw("csaw-s-obj-test.json", "test")
     }
-    return CustomDataset(labels, main_label, base_dataset, dataset_name)
+    return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
   else:
     raise NotImplementedError(f"Dataset {args.dataset} is not supported")
 
@@ -290,10 +290,11 @@ def base_experiment(dataset):
   ds, _ = dataset.subset(args.dataset + "_no_complementary_labels", nb_comp_labels=3)
 
   cfg = get_cfg()
+  cfg.OUTPUT_DIR = args.output_dir
 
-  cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
-  
-  cfg.INPUT.ALBUMENTATIONS = "./augs.json"
+  # cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
+  cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/retinanet_R_50_FPN_1x.yaml")) # TODO: Potentially use longer schedule, 3x
+  cfg.INPUT.ALBUMENTATIONS = os.path.join("../configs/obj/augmentations", dataset.dataset_name + ".json")
   cfg.INPUT.FORMAT = "BGR"
 
   # enables mixed precision, not super useful on my local GPU but might be free 
@@ -332,8 +333,8 @@ def base_experiment(dataset):
   for i in range(1): # repeat many times
     model = build_model(cfg)
     # set evaluation to occur every epoch instead of only in end
-    # cfg.SOLVER.MAX_ITER = 40 * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
-    cfg.TEST.EVAL_PERIOD = 5000
+    cfg.SOLVER.MAX_ITER = 40 # * int(round(len(DatasetCatalog.get(cfg.DATASETS.TRAIN[0])) / cfg.SOLVER.IMS_PER_BATCH))
+    cfg.TEST.EVAL_PERIOD = 2000
     do_train(cfg, model)
 
     model.eval()
@@ -352,13 +353,14 @@ def main(args):
 
   dataset_name = args.dataset 
   main_label = args.main_label
-  base_dataset = extract_dataset(dataset_name, main_label)
+  base_dataset = extract_dataset(dataset_name, main_label, args)
   print(base_dataset.base_dict_func["train"][0]["file_name"])
   
   # default_setup literally only sets the cfg rng seed, the output directory, and whether cudnn.benchmark should be used.
   # I only load it because of the setup.
   base_cfg = get_cfg()
   base_cfg.SEED = args.seed
+  base_cfg.OUTPUT_DIR = args.output_dir
 
   # https://towardsdatascience.com/properly-setting-the-random-seed-in-machine-learning-experiments-7da298d1320b
 
@@ -379,6 +381,7 @@ def main(args):
     ds, _ = base_dataset.subset(args.dataset, nb_comp_labels=0)
 
     cfg = get_cfg()
+    cfg.OUTPUT_DIR = args.output_dir
 
     cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
     
@@ -424,7 +427,7 @@ def main(args):
   if args.eval:
     main_label = args.main_label
     # no complementaries
-    ds, _ = base_dataset.subset(args.dataset + "_no_complementary_labels", identity=True)
+    ds, _ = base_dataset.subset(args.dataset + "_no_complementary_labels", manual_comp_labels=["bicycle", "car", "motorbike"])
 
     cfg = get_cfg()
 
@@ -457,8 +460,8 @@ def main(args):
     
     #TODO: LR SCHEDULING (which scheduler, whether decay should be applied etc)
 
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # number of complementary labels + main label
-    cfg.MODEL.RETINANET.NUM_CLASSES = 1  # number of complementary labels + main label
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
+    cfg.MODEL.RETINANET.NUM_CLASSES = len(MetadataCatalog.get(ds[0]).get("thing_classes"))  # number of complementary labels + main label
 
     cfg.TEST.EVAL_PERIOD = 0
     # print("Entering lr search... ")
@@ -470,6 +473,7 @@ def main(args):
     #cfg.MODEL.WEIGHTS = os.path.join("./output", "best_model.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_images_without_annotations/output", "best_model_7499.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/base_with_filter_annotations/output", "best_model_4814.pth")  # path to the model we just trained
+    cfg.MODEL.WEIGHTS = os.path.join("experimental_results/empty_imgs_3_complabels_longtraining_nounderfitting/output", "best_model.pth")  # path to the model we just trained
     #cfg.MODEL.WEIGHTS = os.path.join("./experimental_results/new_base_with_annotations_using_1e-4lr_patience1/output", "best_model_2499.pth")  # path to the model we just trained
     # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.75   # set a custom testing threshold
     # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5   # set a custom testing threshold
@@ -491,19 +495,19 @@ def main(args):
 
     for data, iteration in zip(data_loader, range(len(dataset_dicts))):
       mapped_data = data[0]
-      #save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
-      orig = utils.read_image(mapped_data['file_name'], format="BGR")
-      print(mapped_data['file_name'])
-      # permute C, H, W format to H, W, C format and flip C from BGR to RGB
-      v = Visualizer(orig[:,:,::-1], # = img[:,:,::-1] in numpy
-          metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
-          scale=0.2)
-      out = v.draw_dataset_dict(mapped_data)
+      save_sample(cfg, model, mapped_data, "sample " + str(iteration), show=True)
+      # orig = utils.read_image(mapped_data['file_name'], format="BGR")
+      # print(mapped_data['file_name'])
+      # # permute C, H, W format to H, W, C format and flip C from BGR to RGB
+      # v = Visualizer(orig[:,:,::-1], # = img[:,:,::-1] in numpy
+      #     metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
+      #     scale=0.2)
+      # out = v.draw_dataset_dict(mapped_data)
 
       
-      cv2.imshow('sample', out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
-      cv2.waitKey()
-      cv2.destroyWindow('sample')
+      # cv2.imshow('sample', out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
+      # cv2.waitKey()
+      # cv2.destroyWindow('sample')
 
       if iteration == 2:
         break
@@ -651,7 +655,7 @@ Run on multiple machines:
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
     parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
-    parser.add_argument("--dataset-path", default="./", help="the directory to the dataset")
+    parser.add_argument("--dataset-path", default="../datasets", help="the directory to the dataset")
     parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
  
     parser.add_argument("--seed", type=int, default=random.randint(0,1000), help="seed used for randomization")

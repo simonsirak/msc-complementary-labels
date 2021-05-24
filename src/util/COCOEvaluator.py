@@ -80,7 +80,7 @@ class COCOEvaluator(DatasetEvaluator):
                 When empty, it will use the defaults in COCO.
                 Otherwise it should be the same length as ROI_KEYPOINT_HEAD.NUM_KEYPOINTS.
         """
-        self._logger = setup_logger(output="./output", name="custom.coco_evaluation")
+        self._logger = setup_logger(output=output_dir, name="custom.coco_evaluation")
         self._distributed = distributed
         self._output_dir = output_dir
         self._use_fast_impl = use_fast_impl

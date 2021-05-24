@@ -53,15 +53,14 @@ OUTPUT_LABEL_TO_NUM = {v: k for k, v in OUTPUT_NUM_TO_LABEL.items()}
 # I will use the original full size images and construct patches via dataloader instead.
 # This is because I don't know if what it means to crop for object detection. I can then
 # enable cropping in albumentations by adding such things, and by using bboxparams.
-base = "./CSAW-S/CsawS"
-splits = ["segmentation_maps"] # test split should be done on union of annotator segmentations for main label
 
-def main():
-  trainval()
-  test()
+def main(args):
+  base = os.path.join(args.path, "CSAW-S/CsawS")
+  trainval(base)
+  test(base)
 
 # for test, only care abt cancer vs no cancer. The other metrics do not matter.
-def test():
+def test(base):
   dataset = []
   mask_paths_1 = glob.glob(os.path.join(base, "test_data", "segmentation_maps", "annotator_1", "*.png"))
   mask_paths_2 = glob.glob(os.path.join(base, "test_data", "segmentation_maps", "annotator_2", "*.png"))
@@ -80,66 +79,40 @@ def test():
     mask[mask > 1] = 255
     mask = mask.astype('uint8')
 
-    # print(len(mask[mask > 1]))
-
     # corresponding image path
     img_name = '_'.join(mask_paths_1[i].split('/')[-1].split('.')[0].split('_')[:-1])
     img_path = os.path.join(base, "test_data", "original_images", img_name)
-
-    # print(img_name)
     
     sample['file_name'] = img_path + '.png'
     sample['height'] = mask_1.shape[0]
     sample['width'] = mask_1.shape[1]
-    sample['image_id'] = img_name # hmm, unsure abt this one but should work.
+    sample['image_id'] = img_name
 
-    # print(img_path)
-
-    # cv.imshow('sample', img)
-    # cv.waitKey()
-    # cv.destroyWindow('sample')
-    # exit(0)
     annotations = []
 
     blurred_mask = cv.blur(mask, (25,25), 0)
     contours, hierarchy = cv.findContours(blurred_mask.astype(np.uint8), mode=cv.RETR_EXTERNAL, method=cv.CHAIN_APPROX_SIMPLE)
-    #print(hierarchy)
-    # contours = cv.groupRectangles(contours, groupThreshold=1, eps=0.05)
-    #print(len(contours))
-    #print(hierarchy)
     rects = []
     for idx, contour in enumerate(contours):
       if hierarchy[0][idx][3] == -1:
         rects.append(cv.boundingRect(contour))
 
     rects = cv.groupRectangles(rects, groupThreshold=0, eps=0.05)
-    # print((rects))
-    # cv.drawContours(mask, contours, -1, color=(122), thickness=10)
     for rect in rects[0]:
-      #print(rect)
       x, y, w, h = rect
       annotation = {}
       annotation['bbox'] = [int(x),int(y),int(x+w),int(y+h)] # box mode is XYXY_ABS
       annotation['category_id'] = OUTPUT_LABEL_TO_NUM['cancer']
       annotations.append(annotation)
-      # for debugging
-      # cv.rectangle(mask,(x,y),(x+w,y+h),(255), thickness=5)
-    
-      # cv.imshow('sample', cv.resize(mask,(int(sample['height']/6),int(sample['width']/6))))
-      # cv.waitKey()
-      # cv.destroyWindow('sample')
-      # exit(0)
 
     sample['annotations'] = annotations 
     dataset.append(sample)
-    # break
 
   import json
-
-  with open('csaw-s-obj-test.json', 'w') as fp:
+  with open('../../configs/obj/datasets/csaw-s-obj-test.json', 'w') as fp:
     json.dump(dataset, fp)
 
-def trainval():
+def trainval(base):
   dataset = []
   mask_paths = os.path.join(base, "segmentation_maps", "*.png")
   mask_paths = glob.glob(mask_paths)
@@ -149,25 +122,16 @@ def trainval():
 
     # H, W, C
     img = cv.imread(mask_path, cv.IMREAD_ANYDEPTH).astype('uint8')
-    # print(img.shape)
 
     # corresponding image path
     img_name = '_'.join(mask_path.split('/')[-1].split('.')[0].split('_')[:-1])
     img_path = os.path.join(base, "original_images", img_name)
-
-    # print(img_name)
     
     sample['file_name'] = img_path + '.png'
     sample['height'] = img.shape[0]
     sample['width'] = img.shape[1]
-    sample['image_id'] = img_name # hmm, unsure abt this one but should work.
+    sample['image_id'] = img_name 
 
-    # print(img_path)
-
-    # cv.imshow('sample', img)
-    # cv.waitKey()
-    # cv.destroyWindow('sample')
-    # exit(0)
     annotations = []
     for label in LABEL_TO_NUM.keys():
       if label not in OUTPUT_CLASSES:
@@ -184,40 +148,30 @@ def trainval():
       else:
         blurred_mask = cv.blur(mask, (25,25), 0)
       contours, hierarchy = cv.findContours(blurred_mask.astype(np.uint8), mode=cv.RETR_EXTERNAL, method=cv.CHAIN_APPROX_SIMPLE)
-      #print(hierarchy)
-      # contours = cv.groupRectangles(contours, groupThreshold=1, eps=0.05)
-      #print(len(contours))
-      #print(hierarchy)
+
       rects = []
       for idx, contour in enumerate(contours):
         if hierarchy[0][idx][3] == -1:
           rects.append(cv.boundingRect(contour))
 
       rects = cv.groupRectangles(rects, groupThreshold=0, eps=0.05)
-      # print((rects))
-      # cv.drawContours(img, contours, -1, color=(122), thickness=10)
       for rect in rects[0]:
-        #print(rect)
         x, y, w, h = rect
         annotation = {}
         annotation['bbox'] = [int(x),int(y),int(x+w),int(y+h)] # box mode is XYXY_ABS
         annotation['category_id'] = OUTPUT_LABEL_TO_NUM[label]
         annotations.append(annotation)
-        # for debugging
-        # cv.rectangle(img,(x,y),(x+w,y+h),(255), thickness=5)
-      
-        # cv.imshow('sample', cv.resize(img,(int(sample['height']/6),int(sample['width']/6))))
-        # cv.waitKey()
-        # cv.destroyWindow('sample')
 
     sample['annotations'] = annotations 
     dataset.append(sample)
-    # break
 
   import json
-
-  with open('csaw-s-obj-trainval.json', 'w') as fp:
+  with open('../../configs/obj/datasets/csaw-s-obj-trainval.json', 'w') as fp:
     json.dump(dataset, fp)
 
+import argparse
 if __name__ == "__main__":
-  main()
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--path", default="../../datasets", help="path to directory containing 'CSAW-S' directory. Default: '../../datasets'")
+  args = parser.parse_args()
+  main(args)

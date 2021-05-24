@@ -22,4 +22,4 @@ transform = A.Compose([
 # and paired with the output image after augmentation, e.g labels. But can be any data that 
 # does not need to change throughout augmentation! If bbox dissappears, so will the corresponding 
 # entry of each added label field. They must match in size im pretty sure.
-A.save(transform, './augs.json')
+A.save(transform, '../../configs/obj/augmentations/PascalVOC2007.json')

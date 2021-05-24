@@ -26,10 +26,10 @@ class DummyAlbuMapper:
     """
     
     def __init__(self, cfg, is_train=True):
-        self.aug = self._get_aug(cfg.INPUT.ALBUMENTATIONS)
-        self.img_format = cfg.INPUT.FORMAT
-        self.is_train = is_train
-        #TODO: BoxMode based on added custom cfg key since it varies based on dataset.
+      self.aug = self._get_aug(cfg.INPUT.ALBUMENTATIONS)
+      self.img_format = cfg.INPUT.FORMAT
+      self.is_train = is_train
+      #TODO: BoxMode based on added custom cfg key since it varies based on dataset.
             
     def _get_aug(self, arg):
         with open(arg) as f:
@@ -42,7 +42,7 @@ class DummyAlbuMapper:
         # (usually BGR because default models in detectron2 use that)
         #print(self.img_format)
         img = utils.read_image(dataset_dict['file_name'], format=self.img_format)
-        #print("SHAPE OF IMG", img.shape)
+        # print("SHAPE OF IMG", img.shape)
 
         boxes = [ann['bbox'] for ann in dataset_dict['annotations']]
         labels = [ann['category_id'] for ann in dataset_dict['annotations']]
@@ -50,6 +50,8 @@ class DummyAlbuMapper:
         if self.is_train:
           # albumentations wants RGB format so we reverse ASSUMING BGR IS THE CURRENT FORMAT
           augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
+          while np.all(augm_annotation['image'] <= 30):
+            augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
         else: 
           augm_annotation = {'category_id': labels, 'bboxes': boxes, 'image': img[:,:,::-1]}
         img = augm_annotation['image'][:,:,::-1]

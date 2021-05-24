@@ -4,7 +4,7 @@ from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 from detectron2.data import detection_utils as utils
 import copy
-from augmentor import DummyAlbuMapper
+from .augmentor import DummyAlbuMapper
 
 def save_sample(cfg, model, data_dict, dst_path, show=False):
   old_threshold = cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST
@@ -67,7 +67,7 @@ def plot_runs(points_list):
   plt.show()
 
 # because apparently release 0.4 is different on github and what i have :)
-from detectron_build import *
+from .detectron_build import *
 
 def build_optimizer(cfg, model):
   """

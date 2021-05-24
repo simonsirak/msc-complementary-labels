@@ -1,0 +1,1 @@
+Contains detectron-formatted JSON datasets for easier detectron compatibility.
