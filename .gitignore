@@ -140,3 +140,5 @@ csaw-s-obj-trainval.json
 csaw-s-obj-test.json
 /hyperparam_search/
 /datasets/
+
+/todo.md
