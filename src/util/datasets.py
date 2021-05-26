@@ -20,6 +20,7 @@ from copy import copy, deepcopy
 
 import logging
 from detectron2.utils.logger import setup_logger
+from detectron2.utils import comm
 
 class CustomDataset:
   def __init__(self, labels, main_label, base_dict_func, dataset_name, log_dir):
@@ -27,7 +28,7 @@ class CustomDataset:
     self.labels = labels # all labels (python list) in the order of the category id's of the detectron dataset dictionary
     self.main_label = main_label # main label
     self.base_dict_func = base_dict_func # func that returns a dict of standard format dict {"train": {}, "val": {}, "test": {}}
-    setup_logger(output=log_dir, name="datasets")
+    setup_logger(output=log_dir, distributed_rank=comm.get_rank(), name="datasets")
     self.logger = logging.getLogger("datasets")
     self.dataset_name = dataset_name
   

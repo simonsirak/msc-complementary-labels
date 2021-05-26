@@ -3,6 +3,7 @@ import cv2
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 from detectron2.data import detection_utils as utils
+import detectron2.data.datasets.pascal_voc as pascal_voc 
 import copy
 from .augmentor import DummyAlbuMapper
 
@@ -126,3 +127,25 @@ def load_csaw(json_path, split="train"):
     raise NotImplementedError(f"Dataset split {split} is not supported for CSAW-S")
 
   return dataset
+
+from util.datasets import CustomDataset
+import scripts.generate_obj_csaws as csaws
+def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
+  if dataset_name == "PascalVOC2007":
+    labels = list(pascal_voc.CLASS_NAMES)
+    base_dataset = {
+      "train": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007"), "train", labels),
+      "val": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007"), "val", labels),
+      "test": pascal_voc.load_voc_instances(os.path.join(args.dataset_path, "VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007"), "test", labels),
+    }
+    return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
+  elif dataset_name == "CSAW-S":
+    labels = csaws.OUTPUT_CLASSES
+    base_dataset = {
+      "train": load_csaw("../configs/obj/datasets/csaw-s-obj-trainval.json", "train"),
+      "val": load_csaw("../configs/obj/datasets/csaw-s-obj-trainval.json", "val"),
+      "test": load_csaw("../configs/obj/datasets/csaw-s-obj-test.json", "test")
+    }
+    return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
+  else:
+    raise NotImplementedError(f"Dataset {args.dataset} is not supported")

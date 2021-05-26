@@ -26,6 +26,7 @@ from detectron2.utils.logger import create_small_table
 
 from detectron2.evaluation.evaluator import DatasetEvaluator
 from detectron2.utils.logger import setup_logger
+from detectron2.utils import comm
 
 class COCOEvaluator(DatasetEvaluator):
     """
@@ -80,7 +81,7 @@ class COCOEvaluator(DatasetEvaluator):
                 When empty, it will use the defaults in COCO.
                 Otherwise it should be the same length as ROI_KEYPOINT_HEAD.NUM_KEYPOINTS.
         """
-        self._logger = setup_logger(output=output_dir, name="custom.coco_evaluation")
+        self._logger = setup_logger(output=output_dir, distributed_rank=comm.get_rank(), name="custom.coco_evaluation")
         self._distributed = distributed
         self._output_dir = output_dir
         self._use_fast_impl = use_fast_impl
@@ -385,7 +386,7 @@ class COCOEvaluator(DatasetEvaluator):
         print(table)
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
         # END CHANGE
-        results.update({"AP-" + name: ap for name, ap in results_per_category})
+        results.update({"AP-" + name: [ap, ap50, ap75, aps, apm, apl] for name, ap, ap50, ap75, aps, apm, apl in full_results_per_category})
         return results
 
 

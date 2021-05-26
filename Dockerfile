@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         libjpeg-dev \
         libpng-dev \
+        iproute2 \
         ffmpeg libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -92,7 +93,7 @@ RUN pip install albumentations
 # why pip? because somehow jupyter's tab completion does not work with conda
 RUN pip install --no-cache-dir jupyter jupyterlab
 # RUN conda install -c conda-forge jupyter jupyterlab
- 
+WORKDIR /storage/ssirak 
 # Start a jupyter notebook
 # setting this env var helps with autocomplete
 ENV SHELL=/bin/bash
