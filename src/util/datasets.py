@@ -13,6 +13,7 @@ from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog, DatasetCatalog
+from detectron2.utils import comm
 
 import random
 import json 
@@ -123,6 +124,7 @@ class CustomDataset:
           if self.labels[annotation['category_id']] in l2c.keys():
             good = copy(annotation)
             good['category_id'] = l2c[self.labels[good['category_id']]]
+            good.pop('segmentation', None) # mainly to remove this from COCO because they were encoded as bytes, which cannot be JSON serialized, I don't use these anyway
             new_annotations.append(good)
         record["annotations"] = new_annotations # those with no annotation are filtered out by dataloader bc cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = True by default
 
@@ -140,6 +142,7 @@ class CustomDataset:
       if name in MetadataCatalog.list():
         MetadataCatalog.remove(name) # remove if exists
       MetadataCatalog.get(name).set(thing_classes=c2l)
+      MetadataCatalog.get(name).set(main_label=self.main_label) # used in custom COCOEvaluator
       if self.dataset_name == "PascalVOC2007":
         if split in ["train", "val"]:
           MetadataCatalog.get(name).set(dirname="VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007")
@@ -150,6 +153,9 @@ class CustomDataset:
       elif self.dataset_name == "CSAW-S":
         MetadataCatalog.get(name).set(split=split)
         MetadataCatalog.get(name).set(year=2020)
+      elif self.dataset_name == "MSCOCO":
+        MetadataCatalog.get(name).set(split=split)
+        MetadataCatalog.get(name).set(year=2017)
 
       print("SPLIT SIZE:", len(base_dicts[split]))
 
@@ -163,6 +169,48 @@ class CustomDataset:
       ordered_names.append(names[0])
     else:
       ordered_names = names
-    print(ordered_names)
+    
+    with open(f'generated-dataset.json', 'w') as fp:
+      self.logger.info(base_dicts)
+      json.dump({"dict": base_dicts, "names": ordered_names, "thing_classes": c2l}, fp)
     
     return (ordered_names, c2l)
+  
+  def from_json(self):
+    with open(f'generated-dataset.json', 'r') as fr:
+      mapping = {"train": 0, "val": 1, "test": 2}
+      dataset = json.load(fr)
+      base_dicts = dataset["dict"]
+      ordered_names = dataset["names"]
+      c2l = dataset["thing_classes"]
+      for split in base_dicts.keys(): # if no test split exists this still works
+        # TODO: remove balloon from here.
+        name = ordered_names[mapping[split]]
+
+        if name in DatasetCatalog.list():
+          DatasetCatalog.remove(name) # remove if exists
+
+        DatasetCatalog.register(name, lambda d=split: base_dicts[d])    
+        print("Generated dataset named '", name, "'")
+
+        # METADATA
+        if name in MetadataCatalog.list():
+          MetadataCatalog.remove(name) # remove if exists
+        MetadataCatalog.get(name).set(thing_classes=c2l)
+        MetadataCatalog.get(name).set(main_label=self.main_label) # used in custom COCOEvaluator
+        if self.dataset_name == "PascalVOC2007":
+          if split in ["train", "val"]:
+            MetadataCatalog.get(name).set(dirname="VOC2007/voctrainval_06-nov-2007/VOCdevkit/VOC2007")
+          elif split == "test":
+            MetadataCatalog.get(name).set(dirname="VOC2007/voctest_06-nov-2007/VOCdevkit/VOC2007")
+          MetadataCatalog.get(name).set(split=split)
+          MetadataCatalog.get(name).set(year=2007)
+        elif self.dataset_name == "CSAW-S":
+          MetadataCatalog.get(name).set(split=split)
+          MetadataCatalog.get(name).set(year=2020)
+        elif self.dataset_name == "MSCOCO":
+          MetadataCatalog.get(name).set(split=split)
+          MetadataCatalog.get(name).set(year=2017)
+
+        print("SPLIT SIZE:", len(base_dicts[split]))
+      return (ordered_names, c2l)

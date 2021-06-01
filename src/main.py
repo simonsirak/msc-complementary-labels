@@ -9,6 +9,7 @@ from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.utils.logger import setup_logger
 from detectron2.config import get_cfg
 from detectron2.utils import comm
+from detectron2.utils.env import seed_all_rng
 
 import logging
 
@@ -20,6 +21,7 @@ def main(args):
   # * create subsets for experiments
   # * do lr search for each of them (no intermediate val_loss)
 
+  rank = comm.get_rank()
   dataset_name = args.dataset 
   main_label = args.main_label
   base_dataset = extract_dataset(dataset_name, main_label, args)
@@ -45,9 +47,28 @@ def main(args):
   main_logger.info("Dataset loaded successfully, basic configuration completed.")
 
   if args.base:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering base experiment...")
     base_experiment(args, base_dataset)
     main_logger.info("Base experiment finished!")
+    
+  if args.leave_one_out:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering leave-one-out experiment...")
+    
+    main_logger.info("Leave-one-out experiments finished!")
+    
+  if args.vary_data:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering vary data experiment...")
+    
+    main_logger.info("Vary data experiments finished!")
+    
+  if args.vary_labels:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering vary labels experiment...")
+    
+    main_logger.info("Vary labels experiments finished!")
 
 import argparse 
 import sys
@@ -89,11 +110,11 @@ Run on multiple machines:
     parser.add_argument(
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
-    parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation")
+    parser.add_argument("--dataset", default="PascalVOC2007", help="dataset used for training and evaluation: 'PascalVOC2007', 'CSAW-S' or 'MSCOCO'")
     parser.add_argument("--dataset-path", default="../datasets", help="the directory to the dataset")
     parser.add_argument("--main-label", default="person", help="main label used for training and evaluation")
  
-    parser.add_argument("--seed", type=int, default=random.randint(0,1000), help="seed used for randomization")
+    parser.add_argument("--seed", type=int, default=-1, help="seed used for randomization")
     
     parser.add_argument("--sample", action="store_true", default=False, help="perform sample inference on some images")
 
@@ -135,7 +156,9 @@ Run on multiple machines:
     )
     return parser
 
+import torch
 if __name__ == "__main__":
+    torch.set_num_threads(4)
     args = argument_parser().parse_args()
     print("Command Line Args:", args)
     launch(

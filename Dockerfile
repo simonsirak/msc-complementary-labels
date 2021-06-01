@@ -45,7 +45,7 @@ RUN adduser --disabled-password \
    $USER
  
 # switch to that user
-USER $USER
+# USER $USER
  
 # install miniconda
 ENV MINICONDA_VERSION latest
@@ -97,4 +97,4 @@ WORKDIR /storage/ssirak
 # Start a jupyter notebook
 # setting this env var helps with autocomplete
 ENV SHELL=/bin/bash
-CMD [ "jupyter", "lab", "--no-browser", "--ip", "0.0.0.0" ]
+CMD [ "jupyter", "lab", "--no-browser", "--ip", "0.0.0.0", "--allow-root" ]

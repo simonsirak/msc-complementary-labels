@@ -28,6 +28,7 @@ class DummyAlbuMapper:
     def __init__(self, cfg, is_train=True):
       self.aug = self._get_aug(cfg.INPUT.ALBUMENTATIONS)
       self.img_format = cfg.INPUT.FORMAT
+      self.dataset_name = cfg.INPUT.DATASET_NAME
       self.is_train = is_train
       #TODO: BoxMode based on added custom cfg key since it varies based on dataset.
             
@@ -72,7 +73,7 @@ class DummyAlbuMapper:
                 'iscrowd': 0,
                 'bbox': augm_boxes[i].tolist(),
                 'category_id': augm_labels[i],
-                'bbox_mode': BoxMode.XYXY_ABS, # NOTE: THIS CHANGES DEPENDING ON DATASET
+                'bbox_mode': BoxMode.XYXY_ABS if self.dataset_name in ["CSAW-S", "PascalVOC2007"] else BoxMode.XYWH_ABS
             }
             for i in range(len(augm_boxes))
         ]

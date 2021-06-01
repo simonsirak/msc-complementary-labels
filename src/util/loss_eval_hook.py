@@ -2,95 +2,63 @@ from detectron2.engine.hooks import HookBase
 from detectron2.evaluation import inference_context
 from detectron2.utils.logger import log_every_n_seconds
 from detectron2.data import DatasetMapper, build_detection_test_loader
+from detectron2.data import MetadataCatalog, DatasetCatalog
+
 import detectron2.utils.comm as comm
 import torch
 import time
 import datetime
 import numpy as np 
+import math
 import logging
+from detectron2.utils.logger import setup_logger
+
+from .evaluate import evaluate
 
 # TODO: ADD PATIENCE AND BEST MODEL, AND STOP IF PATIENCE EXCEEDED
-class LossEvalHook:
-  def __init__(self, eval_period, model, model_name, data_loader, checkpointer, patience=0, save_checkpoints=True):
-    self._model = model
-    self._model_name = model_name
-    self._period = eval_period
-    self._data_loader = data_loader
-    self._patience = patience # patience is specified in evaluation period units (e.g 3 evaluation periods)
-    self._cur_patience = 0
-    self._checkpointer = checkpointer
-    self._min_loss = float('inf')
-    self._latest_loss = float('inf') 
-    self._save_checkpoints = save_checkpoints
+class EarlyStoppingHook:
+  def __init__(self, cfg, eval_period, model, model_name, dataset_name, checkpointer, patience=0, save_checkpoints=True):
+    self.cfg = cfg
+    self.model = model
+    self.model_name = model_name
+    self.period = eval_period
+    self.dataset_name = dataset_name
+    self.patience = patience # patience is specified in evaluation period units (e.g 3 evaluation periods)
+    self.cur_patience = 0
+    self.checkpointer = checkpointer
+    self.max_ap = float('-inf')
+    self.latest_ap = float('-inf') 
+    self.save_checkpoints = save_checkpoints
+    self.logger = setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="earlystopping")
+    
   
-  def _do_loss_eval(self, cur_iter, storage):
-    # Copying inference_on_dataset from evaluator.py
-    total = len(self._data_loader)
-    num_warmup = min(5, total - 1)
-        
-    start_time = time.perf_counter()
-    total_compute_time = 0
-    losses = []
+  def evaluate(self, cur_iter, storage):    
     stop_early = False
-    for idx, inputs in enumerate(self._data_loader):       
-      if idx == num_warmup:
-        start_time = time.perf_counter()
-        total_compute_time = 0
-      start_compute_time = time.perf_counter()
-      if torch.cuda.is_available():
-        torch.cuda.synchronize()
-      total_compute_time += time.perf_counter() - start_compute_time
-      iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
-      seconds_per_img = total_compute_time / iters_after_start
-      if idx >= num_warmup * 2 or seconds_per_img > 5:
-        total_seconds_per_img = (time.perf_counter() - start_time) / iters_after_start
-        eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
-        # print("Loss on Validation  done {}/{}. {:.4f} s / img. ETA={}".format(
-        #     idx + 1, total, seconds_per_img, str(eta)
-        #   ))
-        log_every_n_seconds(
-          logging.INFO,
-          "Loss on Validation  done {}/{}. {:.4f} s / img. ETA={}".format(
-            idx + 1, total, seconds_per_img, str(eta)
-          ),
-          n=5,
-          name="detectron2"
-        )
-      loss_batch = self._get_loss(inputs)
-      losses.append(loss_batch)
-    mean_loss = np.mean(losses)
+    result = evaluate(self.cfg, self.model, self.logger, dataset_index=0)
+    if comm.is_main_process(): # non-main processes will get None/{}, hence the KeyError but correct logging on main process
+      ap = result['bbox'][MetadataCatalog.get(self.dataset_name).main_label]['AP']
 
-    self._latest_loss = mean_loss
-    if self._latest_loss < self._min_loss:
-      self._cur_patience = 0
-      self._min_loss = self._latest_loss
-      if self._save_checkpoints:
-        self._checkpointer.save(self._model_name)
-    else:
-      self._cur_patience += 1
-      if self._cur_patience > self._patience:
-        stop_early = True
-    storage.put_scalar('validation_loss', self._latest_loss)
-    comm.synchronize()
+      self.latest_ap = ap
+      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap:
+        self.cur_patience = 0
+        self.max_ap = self.latest_ap
+        if self.save_checkpoints:
+          self.checkpointer.save(self.model_name)
+      else:
+        if not np.isinf(self.max_ap): # only start early stopping if we have actually gotten at least a passable model
+          self.cur_patience += 1
+          if self.cur_patience > self.patience:
+            stop_early = True
+      storage.put_scalar('main_label_AP', self.latest_ap)
 
-    return (losses, False) # TODO: Maybe this when incorporating AP instead of loss.
-          
-  def _get_loss(self, data):
-      # How loss is calculated on train_loop 
-      # Note that no backwards step is done so no updates are made
-      metrics_dict = self._model(data)
-      metrics_dict = {
-          k: v.detach().cpu().item() if isinstance(v, torch.Tensor) else float(v)
-          for k, v in metrics_dict.items()
-      }
-      total_losses_reduced = sum(loss for loss in metrics_dict.values())
-      return total_losses_reduced
+    return (self.max_ap, False)
       
   def after_step(self, cur_iter, max_iter, storage):
     next_iter = cur_iter + 1
     is_final = next_iter == max_iter
-    if is_final or (self._period > 0 and next_iter % self._period == 0):
-        (_, stop_early) = self._do_loss_eval(cur_iter, storage)
+    if is_final or (self.period > 0 and next_iter % self.period == 0):
+        (_, stop_early) = self.evaluate(cur_iter, storage)
+        print("validation loss hook finished!")
         return stop_early
-      #print("validation loss hook finished!")
+    print("validation loss hook finished!")
     return False

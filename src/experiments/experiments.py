@@ -11,39 +11,16 @@ from detectron2 import model_zoo
 from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.data import DatasetMapper
 from detectron2.checkpoint import DetectionCheckpointer
+from torch.nn.parallel import DistributedDataParallel
+from detectron2.utils import comm
 
 import logging
 from detectron2.utils.logger import setup_logger
 from util.COCOEvaluator import COCOEvaluator
 
 # actual training
-from plain_train_net import do_train, build_eval_loader
-
-def evaluate(cfg, model, logger):
-  # build data loader, essentially equivalent to test loader but 
-  # with arbitrary batch size because inference time is not a metric I want.
-  data_loader = build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
-    DatasetCatalog.get(cfg.DATASETS.TEST[1]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
-    batch_size=cfg.SOLVER.IMS_PER_BATCH,
-    num_workers=cfg.DATALOADER.NUM_WORKERS,
-    mapper=DatasetMapper(cfg,False), #do_train=True means we are in training mode.
-    #aspect_ratio_grouping=False
-  )
-
-  with torch.no_grad():
-    def get_all_inputs_outputs():
-      for data in data_loader:
-        yield data, model(data)
-
-    evaluator = COCOEvaluator(cfg.DATASETS.TEST[1], output_dir=cfg.OUTPUT_DIR, distributed=False, tasks=("bbox",))
-    evaluator.reset()
-    logger.info(f'Starting COCO evaluation preprocessing ... ')
-    for inputs, outputs in tqdm(get_all_inputs_outputs()):
-      evaluator.process(inputs, outputs)
-    print("begin coco evaluation...")
-    eval_results = evaluator.evaluate()
-    print("finished coco evaluation!")
-  return eval_results
+from plain_train_net import do_train
+from util.evaluate import evaluate, build_eval_loader
     
 def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
@@ -70,25 +47,39 @@ def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs
 import random
 import json
 from detectron2.utils import comm
+
 def base_experiment(args, dataset):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.base")
   main_label = args.main_label
 
-  # no complementaries
-  ds, _ = dataset.subset(args.dataset + "_no_complementary_labels", nb_comp_labels=0, manual_comp_labels=['bicycle','car','motorbike'])
-
+  # no complementaries, should be identical across all processes since seed is set just before this
+  if comm.is_main_process():
+    ds, _ = dataset.subset(args.dataset + "_no_complementary_labels", nb_comp_labels=0)
+  
+  comm.synchronize()
+  ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
+  
+  # PROBLEM: Running multiple processes, one per GPU. As such, generation of the dataset may become completely 
+  # wonky especially if a preset seed is not used. 
+  # SOLUTION: Use shared seed? BAD
+  # SOLUTION: Use pre-generated splits, loaded from a json? GOOD
+  # SOLUTION: Let main process generate splits, dump to file, let other processes block/sync and then read that file? BEST
+  
+  # SIMILAR PROBLEM: Is Albumentation really multi-GPU? ENSURE THIS. 
+      
   cfg = get_cfg()
   cfg.OUTPUT_DIR = args.output_dir
 
   if dataset.dataset_name == "PascalVOC2007":
     cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
-  elif dataset.dataset_name == "CSAW-S":
+  elif dataset.dataset_name in ["CSAW-S", "MSCOCO"]:
     cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/retinanet_R_50_FPN_1x.yaml")) # TODO: Potentially use longer schedule, 3x
   else:
     raise NotImplementedError(f"Dataset {dataset.dataset_name} not incorporated into experiments")
   
   cfg.INPUT.ALBUMENTATIONS = os.path.join("../configs/obj/augmentations", dataset.dataset_name + ".json")
   cfg.INPUT.FORMAT = "BGR"
+  cfg.INPUT.DATASET_NAME = dataset.dataset_name
 
   # enables mixed precision, not super useful on my local GPU but might be free 
   # performance boost on remote!
@@ -96,9 +87,12 @@ def base_experiment(args, dataset):
 
   cfg.DATASETS.TRAIN = (ds[0],) # training name
   cfg.DATASETS.TEST = (ds[1], ds[2]) # validation, test names
-  cfg.DATALOADER.NUM_WORKERS = 8
-  
+  cfg.DATALOADER.NUM_WORKERS = 16
+
+  original_batchsize = cfg.SOLVER.IMS_PER_BATCH
   cfg.SOLVER.IMS_PER_BATCH = 4 # batch size is 2 images per gpu due to limitations  
+  cfg.SOLVER.MAX_ITER = int(cfg.SOLVER.MAX_ITER * cfg.SOLVER.IMS_PER_BATCH / original_batchsize) # now it is correctly set to the same number of epochs but with different batch size
+  # TODO: Train for equally long with any amount of data or scale MAX_ITER by dataset fraction?
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
   cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05 # NOTE: Cannot do this and evaluate in base experiment as well, must rebuild model with 0.05.
@@ -110,23 +104,27 @@ def base_experiment(args, dataset):
 
   cfg.TEST.EVAL_PERIOD = 0
   # print("Entering lr search... ")
-  #lr = lr_search(cfg, logger, resolution=20, n_epochs=5)
+  lr = lr_search(cfg, logger, resolution=20, n_epochs=5)
   # print("lr search finished, optimal lr is", lr)
-  cfg.SOLVER.BASE_LR = 1e-4 # float(lr) # could instead be assigned to cfg in lr_search but whatevs
+  cfg.SOLVER.BASE_LR = float(lr) # could instead be assigned to cfg in lr_search but whatever
   logger.info(f'Configuration used: {cfg}')
   
   main_label_metrics = []
-  for i in range(1): # repeat many times
-    #cfg.TEST.EVAL_PERIOD = 5000
+  for i in range(5): # repeat many times
+    cfg.TEST.EVAL_PERIOD = len(DatasetCatalog.get(ds[0])) # TODO: Fix this when re-adding early stopping
     
-    cfg.MODEL.WEIGHTS = os.path.join("../../checkpoints/empty_imgs_3_complabels_longtraining_nounderfitting/output", 'best_model.pth')
     model = build_model(cfg)
-    DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
-
-    #do_train(cfg, model)
+    distributed = comm.get_world_size() > 1
+    if distributed:
+        model = DistributedDataParallel(
+            model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+        )
+        
+    do_train(cfg, model)
 
     model.eval()
-    #model.train()
     main_label_metrics.append(evaluate(cfg, model, logger))
+    model.train()
+  
   with open(os.path.join(args.output_dir, "metrics-base.json"), 'w') as fp:
     json.dump(main_label_metrics, fp)

@@ -55,16 +55,18 @@ OUTPUT_LABEL_TO_NUM = {v: k for k, v in OUTPUT_NUM_TO_LABEL.items()}
 # enable cropping in albumentations by adding such things, and by using bboxparams.
 
 def main(args):
-  base = os.path.join(args.path, "CSAW-S/CsawS")
-  trainval(base)
+  base = os.path.join(args.path, "CSAW-S/CsawS/patches/crop_size_512")
+  print(base)
+  trainval(base, 'train')
+  trainval(base, 'val')  
   test(base)
 
 # for test, only care abt cancer vs no cancer. The other metrics do not matter.
 def test(base):
   dataset = []
-  mask_paths_1 = glob.glob(os.path.join(base, "test_data", "segmentation_maps", "annotator_1", "*.png"))
-  mask_paths_2 = glob.glob(os.path.join(base, "test_data", "segmentation_maps", "annotator_2", "*.png"))
-  mask_paths_3 = glob.glob(os.path.join(base, "test_data", "segmentation_maps", "annotator_3", "*.png"))
+  mask_paths_1 = glob.glob(os.path.join(base, "test", "masks", "annotator_1", "*.png"))
+  mask_paths_2 = glob.glob(os.path.join(base, "test", "masks", "annotator_2", "*.png"))
+  mask_paths_3 = glob.glob(os.path.join(base, "test", "masks", "annotator_3", "*.png"))
 
   for i in tqdm(range(len(mask_paths_1))):
     sample = {} 
@@ -80,8 +82,8 @@ def test(base):
     mask = mask.astype('uint8')
 
     # corresponding image path
-    img_name = '_'.join(mask_paths_1[i].split('/')[-1].split('.')[0].split('_')[:-1])
-    img_path = os.path.join(base, "test_data", "original_images", img_name)
+    img_name = mask_paths_1[i].split('/')[-1].split('.')[0]
+    img_path = os.path.join(base, "test", "images", img_name)
     
     sample['file_name'] = img_path + '.png'
     sample['height'] = mask_1.shape[0]
@@ -112,9 +114,11 @@ def test(base):
   with open('../../configs/obj/datasets/csaw-s-obj-test.json', 'w') as fp:
     json.dump(dataset, fp)
 
-def trainval(base):
+def trainval(base, mode):
+  assert mode in ["train", "val"], f'{mode} is not a valid mode! Must be either "train" or "val".'
+  
   dataset = []
-  mask_paths = os.path.join(base, "segmentation_maps", "*.png")
+  mask_paths = os.path.join(base, mode, "masks", "*.png") # <imgid>_<class>-<cropidx>.png
   mask_paths = glob.glob(mask_paths)
 
   for mask_path in tqdm(mask_paths):
@@ -124,8 +128,8 @@ def trainval(base):
     img = cv.imread(mask_path, cv.IMREAD_ANYDEPTH).astype('uint8')
 
     # corresponding image path
-    img_name = '_'.join(mask_path.split('/')[-1].split('.')[0].split('_')[:-1])
-    img_path = os.path.join(base, "original_images", img_name)
+    img_name = mask_path.split('/')[-1].split('.')[0]
+    img_path = os.path.join(base, mode, "images", img_name)
     
     sample['file_name'] = img_path + '.png'
     sample['height'] = img.shape[0]
@@ -166,7 +170,7 @@ def trainval(base):
     dataset.append(sample)
 
   import json
-  with open('../../configs/obj/datasets/csaw-s-obj-trainval.json', 'w') as fp:
+  with open(f'../../configs/obj/datasets/csaw-s-obj-{mode}.json', 'w') as fp:
     json.dump(dataset, fp)
 
 import argparse

@@ -53,36 +53,11 @@ import time
 import datetime
 import numpy as np 
 
-from util.loss_eval_hook import LossEvalHook
+from util.loss_eval_hook import EarlyStoppingHook
 
 from detectron2.data.samplers import InferenceSampler
 from detectron2.data.common import DatasetFromList, MapDataset
 
-# builds a loader that iterates over the dataset once,
-# like build_detection_test_loader, but with arbitrary
-# batch size.
-
-def identity(batch):
-  return batch
-
-def build_eval_loader(dataset, *, mapper, sampler=None, num_workers=0, batch_size=1):
-  if isinstance(dataset, list):
-    dataset = DatasetFromList(dataset, copy=False)
-  if mapper is not None:
-    dataset = MapDataset(dataset, mapper)
-  if sampler is None:
-    sampler = InferenceSampler(len(dataset))
-  # Always use 1 image per worker during inference since this is the
-  # standard when reporting inference time in papers.
-  batch_sampler = torch.utils.data.sampler.BatchSampler(sampler, batch_size, drop_last=False)
-  data_loader = torch.utils.data.DataLoader(
-    dataset,
-    num_workers=num_workers,
-    batch_sampler=batch_sampler,
-    collate_fn=identity, # identity function
-  )
-
-  return data_loader
 
 from util.augmentor import DummyAlbuMapper
 from util.helpers import build_optimizer
@@ -121,24 +96,24 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
     )
 
     # CREATE EARLY STOPPING HOOK HERE
-    early_stopping = LossEvalHook(
-          cfg.TEST.EVAL_PERIOD,
+    early_stopping = EarlyStoppingHook(
+          cfg,
+          cfg.TEST.EVAL_PERIOD if use_early_stopping else 0,
           model,
           "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
-          build_eval_loader( # test loader would use batch size 1 for benchmarking, very slow
-            DatasetCatalog.get(cfg.DATASETS.TEST[0]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
-            batch_size=cfg.SOLVER.IMS_PER_BATCH,
-            num_workers=cfg.DATALOADER.NUM_WORKERS,
-            mapper=DatasetMapper(cfg,True), #do_train=True means we are in training mode.
-            #aspect_ratio_grouping=False
-          ),
+          cfg.DATASETS.TEST[0],
           checkpointer,
           patience=1,
           save_checkpoints=save_checkpoints
         )
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
-        stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        #if use_early_stopping:
+        #  model.eval()
+        #  stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+        #  model.train()
+        #else:
+        #  stop_early = False
         stop_early = False
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
@@ -170,7 +145,10 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
               model.train()
             
             # TODO: Uncomment for early stopping
-            stop_early = early_stopping.after_step(iteration, max_iter, storage)
+            #model.eval()
+            #stop_early = early_stopping.after_step(iteration, max_iter, storage)
+            #model.train()
+            
             # Compared to "train_net.py", the test results are not dumped to EventStorage
             comm.synchronize()
 
@@ -179,6 +157,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
             ):
                 for writer in writers:
                     writer.write()
+            logger.info("hi")
             
             if save_checkpoints:
               periodic_checkpointer.step(iteration)

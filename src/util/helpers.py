@@ -95,32 +95,33 @@ import json
 from detectron2.structures import BoxMode
 from copy import deepcopy
 def load_csaw(json_path, split="train"):
-  validation_split = ["000","001","012","018","025","030","034","038","053","062","068","075","083","127","131","139","156","181","245","249"]
+  # validation_split = ["000","001","012","018","025","030","034","038","053","062","068","075","083","127","131","139","156","181","245","249"]
 
   if split == "train":
     with open(json_path, 'r') as fr:
       original_dataset = deepcopy(json.load(fr))
       dataset = []
       for sample in original_dataset:
-        if sample['image_id'].split('_')[0] not in validation_split:
-          dataset.append(sample) 
-          for annotation in sample['annotations']:
-            annotation['bbox_mode'] = BoxMode.XYXY_ABS
+        dataset.append(sample) 
+        sample['file_name'] = '/'.join(sample['file_name'].split('/')[1:])
+        for annotation in sample['annotations']:
+          annotation['bbox_mode'] = BoxMode.XYXY_ABS
   elif split == "val":
     with open(json_path, 'r') as fr:
       original_dataset = deepcopy(json.load(fr))
       dataset = []
       for sample in original_dataset:
-        if sample['image_id'].split('_')[0] in validation_split:
-          dataset.append(sample) 
-          for annotation in sample['annotations']:
-            annotation['bbox_mode'] = BoxMode.XYXY_ABS
+        dataset.append(sample) 
+        sample['file_name'] = '/'.join(sample['file_name'].split('/')[1:])
+        for annotation in sample['annotations']:
+          annotation['bbox_mode'] = BoxMode.XYXY_ABS
   elif split == "test":
     with open(json_path, 'r') as fr:
       original_dataset = deepcopy(json.load(fr))
       dataset = []
       for sample in original_dataset:
         dataset.append(sample) 
+        sample['file_name'] = '/'.join(sample['file_name'].split('/')[1:])
         for annotation in sample['annotations']:
           annotation['bbox_mode'] = BoxMode.XYXY_ABS
   else:
@@ -130,6 +131,11 @@ def load_csaw(json_path, split="train"):
 
 from util.datasets import CustomDataset
 import scripts.generate_obj_csaws as csaws
+from detectron2.data.datasets.coco import register_coco_instances
+from numpy.random import default_rng
+from detectron2.utils import comm
+from detectron2.data import MetadataCatalog, DatasetCatalog
+
 def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
   if dataset_name == "PascalVOC2007":
     labels = list(pascal_voc.CLASS_NAMES)
@@ -142,10 +148,24 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
   elif dataset_name == "CSAW-S":
     labels = csaws.OUTPUT_CLASSES
     base_dataset = {
-      "train": load_csaw("../configs/obj/datasets/csaw-s-obj-trainval.json", "train"),
-      "val": load_csaw("../configs/obj/datasets/csaw-s-obj-trainval.json", "val"),
+      "train": load_csaw("../configs/obj/datasets/csaw-s-obj-train.json", "train"),
+      "val": load_csaw("../configs/obj/datasets/csaw-s-obj-val.json", "val"),
       "test": load_csaw("../configs/obj/datasets/csaw-s-obj-test.json", "test")
     }
+    return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
+  elif dataset_name == "MSCOCO":
+    #register_coco_instances("cocotrain", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_train2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/train2017"))
+    register_coco_instances("cocotrain", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_val2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/val2017"))
+    register_coco_instances("cocoval", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_val2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/val2017"))
+    rng = default_rng(seed=comm.shared_random_seed())
+    shuffled_training = DatasetCatalog.get("cocotrain")
+    rng.shuffle(shuffled_training) # in-place shuffling
+    base_dataset = {
+      "train": shuffled_training[:int(0.8*len(shuffled_training))],
+      "val": shuffled_training[int(0.8*len(shuffled_training)):],
+      "test": DatasetCatalog.get("cocoval"),
+    }
+    labels = MetadataCatalog.get("cocotrain").thing_classes
     return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
   else:
     raise NotImplementedError(f"Dataset {args.dataset} is not supported")

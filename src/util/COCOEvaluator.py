@@ -189,7 +189,7 @@ class COCOEvaluator(DatasetEvaluator):
                 tasks.add("keypoints")
         return sorted(tasks)
 
-    def _eval_predictions(self, predictions, img_ids=None):
+    def _eval_predictions(self, predictions, img_ids=None, ):
         """
         Evaluate predictions. Fill self._results with the metrics of the tasks.
         """
@@ -246,7 +246,7 @@ class COCOEvaluator(DatasetEvaluator):
             )
 
             res = self._derive_coco_results(
-                coco_eval, task, class_names=self._metadata.get("thing_classes")
+                coco_eval, task, class_names=[self._metadata.get("main_label")]
             )
             self._results[task] = res
 
@@ -311,7 +311,7 @@ class COCOEvaluator(DatasetEvaluator):
 
         if coco_eval is None:
             self._logger.warn("No predictions from the model!")
-            return {metric: float("nan") for metric in metrics}
+            return {class_name: {metric: float("nan") for metric in metrics} for class_name in class_names}
 
         # the standard metrics
         results = {
@@ -386,7 +386,7 @@ class COCOEvaluator(DatasetEvaluator):
         print(table)
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
         # END CHANGE
-        results.update({"AP-" + name: [ap, ap50, ap75, aps, apm, apl] for name, ap, ap50, ap75, aps, apm, apl in full_results_per_category})
+        results.update({name: {"AP": ap, "AP50": ap50, "AP75": ap75, "APs": aps, "APm": apm, "APl": apl} for name, ap, ap50, ap75, aps, apm, apl in full_results_per_category})
         return results
 
 
