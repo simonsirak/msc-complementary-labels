@@ -84,16 +84,17 @@ RUN conda update --name base --channel defaults conda && \
 # activate the env and install the actual packages you need
 # this doesn’t work
 RUN conda activate pytorch
-RUN conda install pip pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=10.1 -c pytorch
+RUN conda install pytorch==1.8.1 torchvision torchaudio cudatoolkit=10.2 -c pytorch
+RUN conda install pip
 # detectron-related stuff
-RUN pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu101/torch1.7/index.html
+RUN pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.8/index.html
 RUN pip install opencv-python
 RUN pip install albumentations
 
 # why pip? because somehow jupyter's tab completion does not work with conda
 RUN pip install --no-cache-dir jupyter jupyterlab
 # RUN conda install -c conda-forge jupyter jupyterlab
-WORKDIR /storage/ssirak 
+WORKDIR /storage/ssirak/msc-complementary-labels/src 
 # Start a jupyter notebook
 # setting this env var helps with autocomplete
 ENV SHELL=/bin/bash

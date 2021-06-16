@@ -61,6 +61,7 @@ from detectron2.data.common import DatasetFromList, MapDataset
 
 from util.augmentor import DummyAlbuMapper
 from util.helpers import build_optimizer
+from torch.cuda.amp import autocast, GradScaler
 
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints=True):
@@ -90,10 +91,12 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
     # precise BN here, because they are not trivial to implement in a small training 
     data_loader = build_detection_train_loader(
       dataset=DatasetCatalog.get(cfg.DATASETS.TRAIN[0]), 
-      mapper=DummyAlbuMapper(cfg, is_train=True),
+      mapper= DummyAlbuMapper(cfg, is_train=True), #DatasetMapper(cfg,is_train=True), 
       total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
       num_workers=cfg.DATALOADER.NUM_WORKERS
     )
+    
+    # data_loader.pin_memory = True
 
     # CREATE EARLY STOPPING HOOK HERE
     early_stopping = EarlyStoppingHook(
@@ -106,30 +109,54 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
           patience=1,
           save_checkpoints=save_checkpoints
         )
+    
+    scaler = GradScaler()
     logger.info("Starting training from iteration {}".format(start_iter))
     with EventStorage(start_iter) as storage:
-        #if use_early_stopping:
-        #  model.eval()
-        #  stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
-        #  model.train()
-        #else:
-        #  stop_early = False
-        stop_early = False
+        if use_early_stopping:
+          model.eval()
+          stop_early = early_stopping.after_step(0, 1, storage) # simulate final iter to guarantee running first time
+          model.train()
+        else:
+          stop_early = False
+        # stop_early = False
         for data, iteration in zip(data_loader, range(start_iter, max_iter)):
             storage.iter = iteration
 
-            loss_dict = model(data)
-            losses = sum(loss_dict.values())
-            assert torch.isfinite(losses).all(), loss_dict
-
+            with autocast(): # up to 3x performance boost
+              loss_dict = model(data)
+              losses = sum(loss_dict.values())
+            
+            # no need to autocast this
             loss_dict_reduced = {k: v.item() for k, v in comm.reduce_dict(loss_dict).items()}
             losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+            
+            losses_communicated = comm.all_gather(losses_reduced)
+            # terminates training on all workers if one has nan or +-infinity loss
+            if not np.isfinite(losses_communicated).all():
+              logger.warning(f"Some losses have diverged, training will be terminated.")
+              return float("-inf")
+            
             if comm.is_main_process():
                 storage.put_scalars(total_loss=losses_reduced, **loss_dict_reduced)
 
             optimizer.zero_grad()
-            losses.backward()
-            optimizer.step()
+            
+            # Scales loss.  Calls backward() on scaled loss to create scaled gradients.
+            # Backward passes under autocast are not recommended.
+            # Backward ops run in the same dtype autocast chose for corresponding forward ops.
+            scaler.scale(losses).backward()
+
+            # scaler.step() first unscales the gradients of the optimizer's assigned params.
+            # If these gradients do not contain infs or NaNs, optimizer.step() is then called,
+            # otherwise, optimizer.step() is skipped.
+            scaler.step(optimizer)
+
+            # Updates the scale for next iteration.
+            scaler.update()
+            
+            #losses.backward()
+            #optimizer.step()
             storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
             scheduler.step()
 
@@ -145,9 +172,9 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
               model.train()
             
             # TODO: Uncomment for early stopping
-            #model.eval()
-            #stop_early = early_stopping.after_step(iteration, max_iter, storage)
-            #model.train()
+            model.eval()
+            stop_early = early_stopping.after_step(iteration, max_iter, storage)
+            model.train()
             
             # Compared to "train_net.py", the test results are not dumped to EventStorage
             comm.synchronize()
@@ -157,14 +184,14 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
             ):
                 for writer in writers:
                     writer.write()
-            logger.info("hi")
+            # logger.info("hi")
             
             if save_checkpoints:
               periodic_checkpointer.step(iteration)
 
             if stop_early and use_early_stopping:
               break
-    return early_stopping._latest_loss # for learning rate evaluation
+    return early_stopping.max_ap if use_early_stopping else early_stopping.latest_ap # for learning rate evaluation/experiment evaluation
 
 from util.datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 

@@ -15,7 +15,7 @@ import logging
 
 # for experiments
 from util.helpers import extract_dataset
-from experiments.experiments import base_experiment
+from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment
 def main(args):
   # if args.create_all_datasets:
   # * create subsets for experiments
@@ -25,7 +25,7 @@ def main(args):
   dataset_name = args.dataset 
   main_label = args.main_label
   base_dataset = extract_dataset(dataset_name, main_label, args)
-  print(base_dataset.base_dict_func["train"][0]["file_name"])
+  # print(base_dataset.base_dict_func["train"][0]["file_name"])
   
   # default_setup literally only sets the cfg rng seed, the output directory, and whether cudnn.benchmark should be used.
   # I only load it because of the setup.
@@ -45,17 +45,25 @@ def main(args):
   main_logger = setup_logger(args.output_dir, distributed_rank=comm.get_rank(), name="main")
   
   main_logger.info("Dataset loaded successfully, basic configuration completed.")
+  
+  if args.sample:
+    main_logger.info("Entering sample experiment...")
+    sample_experiment(args, base_dataset)
+    main_logger.info("Sample experiment finished!")
 
   if args.base:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering base experiment...")
-    base_experiment(args, base_dataset)
+    if args.dataset == "CSAW-S":
+      base_experiment(args, base_dataset, training_size="full")
+    else:
+      base_experiment(args, base_dataset, training_size=len(base_dataset.base_dict_func["train"]))
     main_logger.info("Base experiment finished!")
     
   if args.leave_one_out:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering leave-one-out experiment...")
-    
+    loo_experiment(args, base_dataset, training_size=500)
     main_logger.info("Leave-one-out experiments finished!")
     
   if args.vary_data:
@@ -69,6 +77,15 @@ def main(args):
     main_logger.info("Entering vary labels experiment...")
     
     main_logger.info("Vary labels experiments finished!")
+    
+  if args.lr:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering lr finder...")
+    if args.dataset == "CSAW-S" and args.dataset_size == 263:
+      lr_experiment(args, base_dataset, n_comp=args.num_comp_labels, training_size="full")
+    else:
+      lr_experiment(args, base_dataset, n_comp=args.num_comp_labels, training_size=args.dataset_size)
+    main_logger.info("lr finder finished!")
 
 import argparse 
 import sys
@@ -120,12 +137,12 @@ Run on multiple machines:
 
     # experiments to run in one sitting
     parser.add_argument("--base", action="store_true", default=False, help="perform base experiment")
-    parser.add_argument("--leave-one-out", action="store_true", help="perform leave one out experiment")
-    parser.add_argument("--vary-data", action="store_true", help="perform varying data experiments")
-    parser.add_argument("--vary-labels", action="store_true", help="perform varying complementary labels experiments")
+    parser.add_argument("--leave-one-out", action="store_true", default=False, help="perform leave one out experiment")
+    parser.add_argument("--vary-data", action="store_true", default=False, help="perform varying data experiments")
+    parser.add_argument("--vary-labels", action="store_true", default=False, help="perform varying complementary labels experiments")
 
     parser.add_argument("--num-comp-labels", type=int, default=0, help="number of complementary labels for vary label experiments")
-    parser.add_argument("--dataset-fraction", type=float, default=0.5, help="fraction of data to use for experiments; default half for all non-dataset related experiments")
+    parser.add_argument("--dataset-size", type=int, default=263, help="training subset size during all experiments except for the vary data experiments")
 
     parser.add_argument("--eval", action="store_true", default=False, help="perform evaluation")
     parser.add_argument("--coco", action="store_true", default=False, help="perform coco evaluation")

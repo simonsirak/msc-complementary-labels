@@ -51,7 +51,7 @@ class EarlyStoppingHook:
             stop_early = True
       storage.put_scalar('main_label_AP', self.latest_ap)
 
-    return (self.max_ap, False)
+    return (self.max_ap, stop_early)
       
   def after_step(self, cur_iter, max_iter, storage):
     next_iter = cur_iter + 1
@@ -60,5 +60,5 @@ class EarlyStoppingHook:
         (_, stop_early) = self.evaluate(cur_iter, storage)
         print("validation loss hook finished!")
         return stop_early
-    print("validation loss hook finished!")
+    # print("validation loss hook finished!")
     return False

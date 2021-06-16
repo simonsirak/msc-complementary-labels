@@ -9,7 +9,8 @@ import detectron2.data.transforms as T
 from detectron2.data import detection_utils as utils
 from detectron2.structures import BoxMode
 
-
+# BEWARE: DO NOT WORK ON THIS FILE WHILE RUNNING EXPERIMENTS, IT IS APPARENTLY READ 
+# EVEN DURING EXECUTION.
 class DummyAlbuMapper:
     """
     To use albumentations:
@@ -51,11 +52,10 @@ class DummyAlbuMapper:
         if self.is_train:
           # albumentations wants RGB format so we reverse ASSUMING BGR IS THE CURRENT FORMAT
           augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
-          while np.all(augm_annotation['image'] <= 30):
-            augm_annotation = self.aug(image=img[:,:,::-1], bboxes=boxes, category_id=labels)
+          img = augm_annotation['image'][:,:,::-1]
         else: 
           augm_annotation = {'category_id': labels, 'bboxes': boxes, 'image': img[:,:,::-1]}
-        img = augm_annotation['image'][:,:,::-1]
+          # img = augm_annotation['image'][:,:,::-1]
         h, w, _ = img.shape
 
         # print(self.aug.processors["bboxes"].params.format)
@@ -89,13 +89,13 @@ class DummyAlbuMapper:
             annos, img.shape[:2]
         )
         
-        dataset_dict["instances"] = utils.filter_empty_instances(instances)
+        # no need to filter empty instances
+        dataset_dict["instances"] = instances # utils.filter_empty_instances(instances)
 
         dataset_dict['height'] = img.shape[0]
         dataset_dict['width'] = img.shape[1]
 
         # converts to tensor of format C, H, W,
-        # also returns back to BGR from RGB
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(img.transpose(2, 0, 1)))
 
         #print("IMAGES AFTER DETECTRON2 STUFF", img.transpose(2, 0, 1))

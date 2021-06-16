@@ -32,34 +32,49 @@ class CustomDataset:
     setup_logger(output=log_dir, distributed_rank=comm.get_rank(), name="datasets")
     self.logger = logging.getLogger("datasets")
     self.dataset_name = dataset_name
+    self.log_dir = log_dir
   
   # currently only training dataset
   # TODO: Think about how to incorporate varying dataset size, 
   # since dataset might have different labels in same image so
   # it is unclear how to preserve distribution over different sizes.
-  def subset(self, base_name, nb_comp_labels=0, seed=None, leave_out=None, percentage=1, manual_comp_labels=None, identity=False):
+  def subset(self, base_name, nb_comp_labels=0, seed=None, leave_out=None, size=None, manual_comp_labels=None, identity=False, iteration=None):
     # FIRST: Extract only the images that contain annotations for the main label.
     # This removes any variation in the amount of included images despite the chosen
     # dataset. Main label is in 100% of images this way.
     base_dicts = deepcopy(self.base_dict_func)
-
+    
     if not identity:
       for split in base_dicts.keys():
-        new_split = base_dicts[split]
-        # new_split = []
-        # old_split = base_dicts[split]
-        # for record in old_split:
-        #   if self.labels.index(self.main_label) in [annotation["category_id"] for annotation in record["annotations"]]:
-        #     new_split.append(record)
-        
-        # SECOND: Include percentage amount of images
-        # Use only for train dataset; have full validation set for early stopping so they all are based on same validation data
-        # TODO: Is absolute values better choice?
-        # TODO: Fix commented accumulation if it will be used in future.
-        if split == "train":
-          print("full split size for", split, "=", len(new_split))
-          new_split = random.sample(new_split, round(percentage*len(new_split)))
-          print("reduced split size for", split, "=", len(new_split))
+        if self.dataset_name == "CSAW-S" and split == "train":
+          if str(size) in base_dicts[split].keys():
+            if str(iteration) in base_dicts[split][str(size)].keys():
+              new_split = base_dicts[split][str(size)][str(iteration)]["dataset"]
+            else:
+              self.logger.warning(f"iteration {iteration} is not among the supported iterations {list(base_dicts[split][str(size)].keys())}! Using full split.")
+              new_split = base_dicts[split]["full"]["dataset"]
+          else:
+            self.logger.warning(f"size {size} is not among the supported sizes {list(base_dicts[split].keys())}! Using full split.")
+            new_split = base_dicts[split]["full"]["dataset"]
+        else:
+          new_split = base_dicts[split]
+          # new_split = []
+          # old_split = base_dicts[split]
+          # for record in old_split:
+          #   if self.labels.index(self.main_label) in [annotation["category_id"] for annotation in record["annotations"]]:
+          #     new_split.append(record)
+
+          # SECOND: Include percentage amount of images
+          # Use only for train dataset; have full validation set for early stopping so they all are based on same validation data
+          # TODO: Is absolute values better choice?
+          # TODO: Fix commented accumulation if it will be used in future.
+          if split == "train" and size is not None: # if custom size is specified
+            self.logger.info(f"full split size for {split} = {len(new_split)}")
+            if size > len(new_split):
+              self.logger.warning(f"size {size} is greater than training split size {len(new_split)}! Keeping the split size.")
+              size = len(new_split)
+            new_split = random.sample(new_split, size)
+            self.logger.info(f"full split size for {split} = {len(new_split)}")
         base_dicts[split] = new_split
 
       # COUNT OCCURRENCES & FILTER OUT LABELS THAT ARE COMMON ENOUGH IN RELATION TO MAIN LABEL
@@ -87,7 +102,7 @@ class CustomDataset:
         c2l = deepcopy(valid_labels)
         c2l.remove(leave_out)
 
-        print("leaving out complementary label:", leave_out)
+        self.logger.info("leaving out complementary label:", leave_out)
       else:
         if manual_comp_labels is not None:
           c2l = copy(manual_comp_labels)
@@ -170,14 +185,16 @@ class CustomDataset:
     else:
       ordered_names = names
     
-    with open(f'generated-dataset.json', 'w') as fp:
+    # TODO: output this in the output dir instead, so multiple experiments 
+    # can run in parallel without overwriting this.
+    with open(os.path.join(self.log_dir, 'generated-dataset.json'), 'w') as fp:
       self.logger.info(base_dicts)
       json.dump({"dict": base_dicts, "names": ordered_names, "thing_classes": c2l}, fp)
     
     return (ordered_names, c2l)
   
   def from_json(self):
-    with open(f'generated-dataset.json', 'r') as fr:
+    with open(os.path.join(self.log_dir, 'generated-dataset.json'), 'r') as fr:
       mapping = {"train": 0, "val": 1, "test": 2}
       dataset = json.load(fr)
       base_dicts = dataset["dict"]

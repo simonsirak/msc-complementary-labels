@@ -5,6 +5,7 @@ from detectron2.data.common import DatasetFromList, MapDataset
 from detectron2.data.samplers import InferenceSampler
 
 from util.COCOEvaluator import COCOEvaluator
+from torch.cuda.amp import autocast
 
 # builds a loader that iterates over the dataset once,
 # like build_detection_test_loader, but with arbitrary
@@ -41,7 +42,7 @@ def evaluate(cfg, model, logger, dataset_index=1):
     DatasetCatalog.get(cfg.DATASETS.TEST[dataset_index]), #TODO: idk WHY but the early stopping code goes past the size of the validation set... either the test set (which is larger) is used, or i accidentally constructed too many epochs.... OOOOOOOOOOOORRRRRRRRRRRRRRRRR the training data loader is literally infinite, i.e it loops forever! LMAO
     batch_size=cfg.SOLVER.IMS_PER_BATCH,
     num_workers=cfg.DATALOADER.NUM_WORKERS,
-    mapper=DatasetMapper(cfg,False), #do_train=True means we are in training mode.
+    mapper=DatasetMapper(cfg,False), #do_train=True means we are in training mode, and applies different detectron2 augs.
     #aspect_ratio_grouping=False
   )
 
@@ -50,7 +51,10 @@ def evaluate(cfg, model, logger, dataset_index=1):
     evaluator.reset()
     logger.info(f'Starting COCO evaluation preprocessing ... ')
     for data in tqdm(data_loader):
-      evaluator.process(data, model(data))
+      res = None
+      with autocast():
+        res = model(data)
+      evaluator.process(data, res)
     logger.info("begin coco evaluation...")
     eval_results = evaluator.evaluate()
     logger.info("finished coco evaluation!")
