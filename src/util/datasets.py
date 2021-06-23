@@ -24,11 +24,11 @@ from detectron2.utils.logger import setup_logger
 from detectron2.utils import comm
 
 class CustomDataset:
-  def __init__(self, labels, main_label, base_dict_func, dataset_name, log_dir):
+  def __init__(self, labels, main_label, base_dicts, dataset_name, log_dir):
     self.id = 0
     self.labels = labels # all labels (python list) in the order of the category id's of the detectron dataset dictionary
     self.main_label = main_label # main label
-    self.base_dict_func = base_dict_func # func that returns a dict of standard format dict {"train": {}, "val": {}, "test": {}}
+    self.base_dicts = base_dicts # func that returns a dict of standard format dict {"train": {}, "val": {}, "test": {}}
     setup_logger(output=log_dir, distributed_rank=comm.get_rank(), name="datasets")
     self.logger = logging.getLogger("datasets")
     self.dataset_name = dataset_name
@@ -42,7 +42,7 @@ class CustomDataset:
     # FIRST: Extract only the images that contain annotations for the main label.
     # This removes any variation in the amount of included images despite the chosen
     # dataset. Main label is in 100% of images this way.
-    base_dicts = deepcopy(self.base_dict_func)
+    base_dicts = deepcopy(self.base_dicts)
     
     if not identity:
       for split in base_dicts.keys():
@@ -89,7 +89,7 @@ class CustomDataset:
       self.logger.info("occurrences of main label in train data: {}".format(nb_train_occ))
       for i, c in enumerate(label_counter):
         #print("c:", c, "i:", i)
-        if c / nb_train_occ >= 0.02:
+        if c / nb_train_occ >= 0: # used to be 0.02, but now accepts all labels in case MSCOCO has a label that is veery rare
           valid_labels.append(self.labels[i])
           #print("valid labels: ", valid_labels)
 
@@ -101,12 +101,14 @@ class CustomDataset:
 
         c2l = deepcopy(valid_labels)
         c2l.remove(leave_out)
+        c2l.sort()
 
         self.logger.info("leaving out complementary label:", leave_out)
       else:
         if manual_comp_labels is not None:
           c2l = copy(manual_comp_labels)
           c2l.append(self.main_label)
+          c2l.sort()
         else:
           # DATASET
           comp_labels = copy(valid_labels)
@@ -131,7 +133,7 @@ class CustomDataset:
       for c, l in enumerate(c2l):
         l2c[l] = c
     names = []
-    #base_dicts = deepcopy(self.base_dict_func) # so we don't screw with original
+    #base_dicts = deepcopy(self.base_dicts) # so we don't screw with original
     for split in base_dicts.keys(): # if no test split exists this still works
       for record in base_dicts[split]:
         new_annotations = []
@@ -192,7 +194,33 @@ class CustomDataset:
       json.dump({"dict": base_dicts, "names": ordered_names, "thing_classes": c2l}, fp)
     
     return (ordered_names, c2l)
-  
+
+  def top_k_complementary_labels(main_label, k):
+    labels = deepcopy(self.labels)
+    labels.remove(main_label)
+    full_train_data = self.base_dicts["train"]
+    occurrences = [0 for label in labels]
+    for record in full_train_data:
+      for annotation in record["annotations"]:
+        occurrences[annotation['category_id']] += 1
+    sorted_indices = sorted(range(len(occurrences)), key = lambda k : occurrences[k], reverse = True)
+    assert k <= len(labels), f"k = {k} is larger than the maximum number of labels = {len(labels)} for the dataset {self.dataset_name}!"
+    return [labels[i] for i in sorted_indices[:k]]
+
+  # prints the percentage of images that each label is in
+  def print_percentage_of_occurrence_of_label_in_images():
+    labels = deepcopy(self.labels)
+    full_train_data = self.base_dicts["train"]
+    occurrences = [0 for label in labels]
+    for record in full_train_data:
+      for label in labels:
+        for annotation in record["annotations"]:
+          if annotation['category_id'] == labels.index(label):
+            occurrences[annotation['category_id']] += 1
+            break
+    for label in labels:
+      self.logger.info(f"label {label} occurs in {100 * float(occurrences[labels.index(label)]) / len(full_train_data)}% of the images.")
+
   def from_json(self):
     with open(os.path.join(self.log_dir, 'generated-dataset.json'), 'r') as fr:
       mapping = {"train": 0, "val": 1, "test": 2}
@@ -201,7 +229,6 @@ class CustomDataset:
       ordered_names = dataset["names"]
       c2l = dataset["thing_classes"]
       for split in base_dicts.keys(): # if no test split exists this still works
-        # TODO: remove balloon from here.
         name = ordered_names[mapping[split]]
 
         if name in DatasetCatalog.list():

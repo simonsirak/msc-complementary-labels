@@ -15,7 +15,7 @@ import logging
 
 # for experiments
 from util.helpers import extract_dataset
-from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment
+from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment, vary_data_experiment, vary_labels_experiment
 def main(args):
   # if args.create_all_datasets:
   # * create subsets for experiments
@@ -54,28 +54,34 @@ def main(args):
   if args.base:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering base experiment...")
-    if args.dataset == "CSAW-S":
-      base_experiment(args, base_dataset, training_size="full")
-    else:
-      base_experiment(args, base_dataset, training_size=len(base_dataset.base_dict_func["train"]))
+    training_size = "full" if dataset_name == "CSAW-S" else 256
+    base_experiment(args, base_dataset, training_size=training_size, use_complementary_labels=False)
+    base_experiment(args, base_dataset, training_size=training_size, use_complementary_labels=True)
     main_logger.info("Base experiment finished!")
     
   if args.leave_one_out:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering leave-one-out experiment...")
-    loo_experiment(args, base_dataset, training_size=500)
+    training_size = "full" if dataset_name == "CSAW-S" else 256
+    loo_experiment(args, base_dataset, training_size=training_size)
     main_logger.info("Leave-one-out experiments finished!")
     
   if args.vary_data:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering vary data experiment...")
-    
+    sizes = [5, 10, 25, 50, 100, 200] if dataset_name == "CSAW-S" else [128, 256, 512, 1024, 2048]
+    # natural domains get slightly higher regimes overall, 
+    # to accomodate for possibility of getting no main label 
+    # in an image
+    vary_data_experiment(args, base_dataset, sizes=sizes) # chosen
     main_logger.info("Vary data experiments finished!")
     
   if args.vary_labels:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering vary labels experiment...")
-    
+    sizes = [1, 3, 5] if dataset_name == "CSAW-S" else [1, 2, 4, 8, 16, 32, 64]
+    training_size = "full" if dataset_name == "CSAW-S" else 256
+    vary_labels_experiment(args, base_dataset, sizes=sizes, training_size=training_size)
     main_logger.info("Vary labels experiments finished!")
     
   if args.lr:

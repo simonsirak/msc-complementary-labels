@@ -248,6 +248,7 @@ class COCOEvaluator(DatasetEvaluator):
             res = self._derive_coco_results(
                 coco_eval, task, class_names=[self._metadata.get("main_label")]
             )
+            
             self._results[task] = res
 
     def _eval_box_proposals(self, predictions):

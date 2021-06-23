@@ -31,15 +31,16 @@ from util.COCOEvaluator import COCOEvaluator
 from plain_train_net import do_train
 from util.evaluate import evaluate, build_eval_loader
     
-def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_iters=5000):
+def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
   lrs = 10 ** powers
   best_val = float('-inf')
   best_lr = 0
-  for lr in lrs:
+  for i, lr in enumerate(lrs):
     # do setup 
     cfg.SOLVER.BASE_LR = float(lr)
-    cfg.SOLVER.MAX_ITER = n_iters
+    cfg.SOLVER.MAX_ITER = n_epochs * cfg.SOLVER.ITERS_PER_EPOCH
+    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
     model = build_model(cfg)
     distributed = comm.get_world_size() > 1
     if distributed:
@@ -93,8 +94,12 @@ def setup_config(args, dataset, ds, training_size):
 
   # original_batchsize = cfg.SOLVER.IMS_PER_BATCH
   cfg.SOLVER.IMS_PER_BATCH = 16 # batch size is 2 images per gpu due to limitations  
-  cfg.SOLVER.MAX_ITER = 100 * int( len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH ) # 100 epochs with early stopping
-  cfg.SOLVER.MAX_ITER = int(cfg.SOLVER.MAX_ITER * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0]))) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.MAX_ITER # since CSAW has pre-processed images that are part of augmentations, they don't count towards total (nah let's not do this)
+  cfg.SOLVER.NUM_EPOCHS = 10000
+  cfg.SOLVER.ITERS_PER_EPOCH = int( len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH )
+  cfg.SOLVER.ITERS_PER_EPOCH = int(cfg.SOLVER.ITERS_PER_EPOCH * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0]))) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.ITERS_PER_EPOCH
+  cfg.SOLVER.WARMUP = cfg.SOLVER.ITERS_PER_EPOCH # warmup for 1 epoch
+  cfg.SOLVER.MAX_ITER = cfg.SOLVER.NUM_EPOCHS * cfg.SOLVER.ITERS_PER_EPOCH
+
   # TODO: Train for equally long with any amount of data or scale MAX_ITER by dataset fraction?
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
@@ -108,30 +113,27 @@ def setup_config(args, dataset, ds, training_size):
   cfg.TEST.EVAL_PERIOD = 0
   return cfg
 
-def base_experiment(args, dataset, training_size=200):
-  logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.base")
-  main_label = args.main_label
+def base_experiment(args, dataset, training_size=200, use_complementary_labels=False):
+  suffix = "all" if use_complementary_labels else "zero"
+  nb_comp_labels = len(dataset.labels) - 1 if use_complementary_labels else 0
+
+  logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name=f"experiments.base.{suffix}")
   
+  main_label = dataset.main_label
   main_label_metrics = []
   for i in range(5): # repeat many times
     # no complementaries, should be identical across all processes since seed is set just before this
     if comm.is_main_process():
-      ds, _ = dataset.subset(args.dataset + "_no_complementary_labels", nb_comp_labels=0, size=training_size, iteration=i+1)
+      ds, _ = dataset.subset(f"{args.dataset}_{suffix}_complementary_labels", nb_comp_labels=nb_comp_labels, size=training_size, iteration=i+1)
 
     comm.synchronize()
     ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
     cfg = setup_config(args, dataset, ds, training_size)
-    cfg.TEST.EVAL_PERIOD = 0
-    max_iter = cfg.SOLVER.MAX_ITER
 
-    #logger.info("Entering lr search... ")
-    #lr = lr_search(cfg, logger, resolution=10, n_epochs=5)
-    #logger.info(f"lr search finished, optimal lr is {lr}")
-
-    cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
-    cfg.SOLVER.MAX_ITER = max_iter
-    cfg.TEST.EVAL_PERIOD = max_iter / 100 # 100 = nb_epochs, defined in setup_config
+    cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # TODO: set this as input config instead
+    cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
+    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
     
     model = build_model(cfg)
@@ -148,34 +150,35 @@ def base_experiment(args, dataset, training_size=200):
     model.train()
   
   if comm.is_main_process():
-    with open(os.path.join(args.output_dir, "metrics-base.json"), 'w') as fp:
+    with open(os.path.join(args.output_dir, f"metrics-base-{suffix}.json"), 'w') as fp:
       json.dump(main_label_metrics, fp)
     
 def loo_experiment(args, dataset, training_size=200):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.loo")
   main_label = args.main_label
-  
-  for label in dataset.labels:
-    # no complementaries, should be identical across all processes since seed is set just before this
-    if comm.is_main_process():
-      ds, _ = dataset.subset(args.dataset + "_leave_out_" + label, leave_out=label, size=training_size)
+  labels = deepcopy(dataset.labels)
+  labels.remove(main_label)
+  if dataset.dataset_name == "MSCOCO":
+    labels = dataset.top_k_complementary_labels(main_label, 10)
+  logger.info(f"labels under consideration: {labels}")
 
-    comm.synchronize()
-    ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
-
-    cfg = setup_config(args, dataset, ds)
-    cfg.TEST.EVAL_PERIOD = 0
-    max_iter = cfg.SOLVER.MAX_ITER
-    # print("Entering lr search... ")
-    # lr = lr_search(cfg, logger, resolution=20, n_epochs=5)
-    # print("lr search finished, optimal lr is", lr)
-    cfg.SOLVER.BASE_LR = float(lr) # could instead be assigned to cfg in lr_search but whatever
-    cfg.SOLVER.MAX_ITER = max_iter
-    logger.info(f'Configuration used: {cfg}')
-
+  for label in labels:
+    logger.info(f"leaving out: {label}")
     main_label_metrics = []
     for i in range(5): # repeat many times
-      cfg.TEST.EVAL_PERIOD = len(DatasetCatalog.get(ds[0])) # TODO: Fix this when re-adding early stopping
+      
+      # if subsets are used, this makes sure each repetition gets its own subset
+      if comm.is_main_process():
+        ds, _ = dataset.subset(f"{args.dataset}_leave_out_{label}", leave_out=label, size=training_size)
+
+      comm.synchronize()
+      ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
+
+      cfg = setup_config(args, dataset, ds)
+      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
+      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
       distributed = comm.get_world_size() > 1
@@ -191,9 +194,90 @@ def loo_experiment(args, dataset, training_size=200):
       model.train()
 
     if comm.is_main_process():
-      with open(os.path.join(args.output_dir, "metrics-loo.json"), 'w') as fp:
+      with open(os.path.join(args.output_dir, f"metrics-loo-{label}.json"), 'w') as fp:
         json.dump(main_label_metrics, fp)
    
+def vary_data_experiment(args, dataset, sizes):
+  logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.vary_data")
+  nb_comp_labels = len(dataset.labels) - 1
+  main_label = args.main_label
+  for size in sizes:
+    logger.info(f"subset size: {size}")
+
+    main_label_metrics = []
+    for i in range(5): # repeat many times
+
+      if comm.is_main_process():
+        ds, _ = dataset.subset(f"{args.dataset}_subset_size_{size}", nb_comp_labels=nb_comp_labels, size=size)
+
+      comm.synchronize()
+      ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
+
+      cfg = setup_config(args, dataset, ds)
+      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
+      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      logger.info(f'Configuration used: {cfg}')
+
+      model = build_model(cfg)
+      distributed = comm.get_world_size() > 1
+      if distributed:
+          model = DistributedDataParallel(
+              model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+          )
+
+      do_train(cfg, model)
+
+      model.eval()
+      main_label_metrics.append(evaluate(cfg, model, logger))
+      model.train()
+
+    if comm.is_main_process():
+      with open(os.path.join(args.output_dir, f"metrics-vary-data-{size}.json"), 'w') as fp:
+        json.dump(main_label_metrics, fp)
+
+def vary_labels_experiment(args, dataset, sizes, training_size=200):
+  logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.vary_labels")
+  nb_comp_labels = len(dataset.labels) - 1
+  main_label = args.main_label
+  labels = deepcopy(dataset.labels)
+  labels.remove(main_label)
+
+  for size in sizes:
+    logger.info(f"label subset size: {size}")
+
+    main_label_metrics = []
+    for i in range(5): # repeat many times
+
+      if comm.is_main_process():
+        ds, _ = dataset.subset(f"{args.dataset}_label_subset_size_{size}", nb_comp_labels=size, size=training_size)
+
+      comm.synchronize()
+      ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
+
+      cfg = setup_config(args, dataset, ds)
+      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
+      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      logger.info(f'Configuration used: {cfg}')
+
+      model = build_model(cfg)
+      distributed = comm.get_world_size() > 1
+      if distributed:
+          model = DistributedDataParallel(
+              model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+          )
+
+      do_train(cfg, model)
+
+      model.eval()
+      main_label_metrics.append(evaluate(cfg, model, logger))
+      model.train()
+
+    if comm.is_main_process():
+      with open(os.path.join(args.output_dir, f"metrics-vary-labels-{size}.json"), 'w') as fp:
+        json.dump(main_label_metrics, fp)
+
 from detectron2.data import build_detection_train_loader
 from util.augmentor import DummyAlbuMapper
 from util.helpers import save_sample
@@ -233,13 +317,13 @@ def sample_experiment(args, dataset, nb_samples=3):
 
 # TODO: lr should be found separately, who cares which subset in particular is used;
 # just do a grid search for all of the configurations (#labels, #data)
-def lr_experiment(args, dataset, n_comp=0, training_size=200, n_iters=1500):
+def lr_experiment(args, dataset, n_comp=0, training_size=200, n_epochs=5):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.lr")
   main_label = args.main_label
   
   # no complementaries, should be identical across all processes since seed is set just before this
   if comm.is_main_process():
-    ds, _ = dataset.subset(args.dataset + "_lr", nb_comp_labels=n_comp, size=training_size, iteration=1) # iteration = 0 is only for CSAW-S
+    ds, _ = dataset.subset(args.dataset + "_lr", nb_comp_labels=n_comp, size=training_size, iteration=1) # iteration = 1 is only for CSAW-S
 
   comm.synchronize()
   ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
@@ -249,7 +333,7 @@ def lr_experiment(args, dataset, n_comp=0, training_size=200, n_iters=1500):
   max_iter = cfg.SOLVER.MAX_ITER
 
   logger.info("Entering lr search... ")
-  lr = lr_search(cfg, logger, resolution=10, n_iters=n_iters)
+  lr = lr_search(cfg, logger, resolution=10, n_epochs=n_epochs)
   logger.info(f"lr search finished, optimal lr is {lr}")
   
   if comm.is_main_process():
