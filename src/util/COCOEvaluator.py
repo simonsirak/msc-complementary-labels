@@ -333,7 +333,7 @@ class COCOEvaluator(DatasetEvaluator):
         # precision has dims (iou, recall, cls, area range, max dets)
         print(class_names)
         print(precisions.shape)
-        assert len(class_names) == precisions.shape[2]
+        # assert len(class_names) == precisions.shape[2]
         print(precisions.shape)
 
         results_per_category = []
@@ -341,9 +341,9 @@ class COCOEvaluator(DatasetEvaluator):
         for idx, name in enumerate(class_names):
             # area range index 0: all area ranges
             # max dets index -1: typically 100 per image
-
+            actual_idx = self._metadata.thing_classes.index(name)
             # BEGIN CHANGE
-            precision = precisions[:, :, idx, :, -1]
+            precision = precisions[:, :, actual_idx, :, -1]
             #print(precision.shape)
             #print((precision > -1).shape) # (10 IoUs 0.5:0.05:0.95, 101 recall points)
             precision_valids = (precision > -1).astype(int)

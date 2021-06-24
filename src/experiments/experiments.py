@@ -30,7 +30,8 @@ from util.COCOEvaluator import COCOEvaluator
 # actual training
 from plain_train_net import do_train
 from util.evaluate import evaluate, build_eval_loader
-    
+from copy import copy, deepcopy
+
 def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
   lrs = 10 ** powers
@@ -39,8 +40,8 @@ def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs
   for i, lr in enumerate(lrs):
     # do setup 
     cfg.SOLVER.BASE_LR = float(lr)
-    cfg.SOLVER.MAX_ITER = n_epochs * cfg.SOLVER.ITERS_PER_EPOCH
-    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+    cfg.SOLVER.MAX_ITER = int(n_epochs * cfg.SOLVER.ITERS_PER_EPOCH)
+    cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
     model = build_model(cfg)
     distributed = comm.get_world_size() > 1
     if distributed:
@@ -64,7 +65,7 @@ from detectron2.utils import comm
 
 def setup_config(args, dataset, ds, training_size):
   cfg = get_cfg()
-  cfg.OUTPUT_DIR = args.output_dir
+  cfg.BASE_OUTPUT_DIR = args.output_dir
 
   if dataset.dataset_name == "PascalVOC2007":
     cfg.merge_from_file(model_zoo.get_config_file("PascalVOC-Detection/faster_rcnn_R_50_FPN.yaml"))
@@ -94,11 +95,11 @@ def setup_config(args, dataset, ds, training_size):
 
   # original_batchsize = cfg.SOLVER.IMS_PER_BATCH
   cfg.SOLVER.IMS_PER_BATCH = 16 # batch size is 2 images per gpu due to limitations  
-  cfg.SOLVER.NUM_EPOCHS = 10000
-  cfg.SOLVER.ITERS_PER_EPOCH = int( len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH )
-  cfg.SOLVER.ITERS_PER_EPOCH = int(cfg.SOLVER.ITERS_PER_EPOCH * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0]))) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.ITERS_PER_EPOCH
-  cfg.SOLVER.WARMUP = cfg.SOLVER.ITERS_PER_EPOCH # warmup for 1 epoch
-  cfg.SOLVER.MAX_ITER = cfg.SOLVER.NUM_EPOCHS * cfg.SOLVER.ITERS_PER_EPOCH
+  cfg.SOLVER.NUM_EPOCHS = 100000
+  cfg.SOLVER.ITERS_PER_EPOCH = len(DatasetCatalog.get(ds[0])) / cfg.SOLVER.IMS_PER_BATCH
+  cfg.SOLVER.ITERS_PER_EPOCH = cfg.SOLVER.ITERS_PER_EPOCH * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0])) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.ITERS_PER_EPOCH
+  cfg.SOLVER.WARMUP_ITERS = int(25 * cfg.SOLVER.ITERS_PER_EPOCH) # warmup for 25 epochs, scales with subset size (assumes LR search is > 25 epochs, like 100 or smthing)
+  cfg.SOLVER.MAX_ITER = int(cfg.SOLVER.NUM_EPOCHS * cfg.SOLVER.ITERS_PER_EPOCH)
 
   # TODO: Train for equally long with any amount of data or scale MAX_ITER by dataset fraction?
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
@@ -132,8 +133,8 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
     cfg = setup_config(args, dataset, ds, training_size)
 
     cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # TODO: set this as input config instead
-    cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
-    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+    cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
+    cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
     
     model = build_model(cfg)
@@ -174,10 +175,10 @@ def loo_experiment(args, dataset, training_size=200):
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
-      cfg = setup_config(args, dataset, ds)
-      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
-      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
-      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      cfg = setup_config(args, dataset, ds, training_size)
+      cfg.SOLVER.BASE_LR = float(0.000046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, label, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
@@ -213,10 +214,10 @@ def vary_data_experiment(args, dataset, sizes):
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
-      cfg = setup_config(args, dataset, ds)
+      cfg = setup_config(args, dataset, ds, size)
       cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
-      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
-      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
@@ -255,10 +256,10 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
-      cfg = setup_config(args, dataset, ds)
+      cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
-      cfg.TEST.EVAL_PERIOD = cfg.SOLVER.ITERS_PER_EPOCH
-      cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, f"run_{i+1}")
+      cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
@@ -295,7 +296,7 @@ def sample_experiment(args, dataset, nb_samples=3):
   cfg = setup_config(args, dataset, ds, training_size)
   cfg.TEST.EVAL_PERIOD = 0
   logger.info(f'Configuration used: {cfg}')
-  cfg.TEST.EVAL_PERIOD = len(DatasetCatalog.get(ds[0])) # TODO: Fix this when re-adding early stopping
+  cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH) # TODO: Fix this when re-adding early stopping
 
   model = build_model(cfg)
   distributed = comm.get_world_size() > 1
@@ -317,7 +318,7 @@ def sample_experiment(args, dataset, nb_samples=3):
 
 # TODO: lr should be found separately, who cares which subset in particular is used;
 # just do a grid search for all of the configurations (#labels, #data)
-def lr_experiment(args, dataset, n_comp=0, training_size=200, n_epochs=5):
+def lr_experiment(args, dataset, n_comp=0, training_size=200, n_epochs=100):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.lr")
   main_label = args.main_label
   
@@ -329,8 +330,9 @@ def lr_experiment(args, dataset, n_comp=0, training_size=200, n_epochs=5):
   ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
   cfg = setup_config(args, dataset, ds, training_size)
+  logger.info(f'Configuration used: {cfg.SOLVER.WARMUP_ITERS}')
+  logger.info(f'Configuration used: {cfg.SOLVER.ITERS_PER_EPOCH}')
   cfg.TEST.EVAL_PERIOD = 0
-  max_iter = cfg.SOLVER.MAX_ITER
 
   logger.info("Entering lr search... ")
   lr = lr_search(cfg, logger, resolution=10, n_epochs=n_epochs)

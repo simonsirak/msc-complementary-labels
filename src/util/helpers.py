@@ -34,6 +34,8 @@ def save_sample(cfg, model, data_dict, dst_path, show=False):
 import os 
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
 from typing import Optional
+
+# NOTE: Only call this from main process! This avoids weird makedirs stuff.
 def default_writers(output_dir: str, max_iter: Optional[int] = None):
     """
     Build a list of :class:`EventWriter` to be used.
@@ -45,6 +47,7 @@ def default_writers(output_dir: str, max_iter: Optional[int] = None):
     Returns:
         list[EventWriter]: a list of :class:`EventWriter` objects.
     """
+    os.makedirs(output_dir, exist_ok=True)
     return [
         # It may not always print what you want to see, since it prints "common" metrics only.
         CommonMetricPrinter(max_iter),
@@ -154,6 +157,18 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
       "val": load_csaw("../configs/obj/datasets/csaw-s-obj-val.json", "val"),
       "test": load_csaw("../configs/obj/datasets/csaw-s-obj-test.json", "test")
     }
+    
+    rng = default_rng(seed=comm.shared_random_seed()) # based on input seed
+    shuffled_training = base_dataset["train"]
+    #print(type(shuffled_training))
+    for subset_size, subset in shuffled_training.items():
+      if subset_size != "full":
+        for iteration, repetition in subset.items():
+          #print(type(repetition))
+          rng.shuffle(repetition['dataset']) # in-place shuffling
+      else:
+        rng.shuffle(subset['dataset']) # in-place shuffling
+    
     return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
   elif dataset_name == "MSCOCO":
     register_coco_instances("cocotrain", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_train2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/train2017"))
@@ -163,8 +178,8 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
     shuffled_training = DatasetCatalog.get("cocotrain")
     rng.shuffle(shuffled_training) # in-place shuffling
     base_dataset = {
-      "train": shuffled_training[:int(0.8*len(shuffled_training))],
-      "val": shuffled_training[int(0.8*len(shuffled_training)):],
+      "train": shuffled_training[:int(0.95*len(shuffled_training))],
+      "val": shuffled_training[int(0.95*len(shuffled_training)):], # don't need INFINITY for val, otherwise it'll take forever.
       "test": DatasetCatalog.get("cocoval"),
     }
     labels = MetadataCatalog.get("cocotrain").thing_classes

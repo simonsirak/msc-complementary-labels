@@ -25,6 +25,8 @@ def main(args):
   dataset_name = args.dataset 
   main_label = args.main_label
   base_dataset = extract_dataset(dataset_name, main_label, args)
+  # base_dataset.print_percentage_of_occurrence_of_label_in_images()
+  # exit(0)
   # print(base_dataset.base_dict_func["train"][0]["file_name"])
   
   # default_setup literally only sets the cfg rng seed, the output directory, and whether cudnn.benchmark should be used.

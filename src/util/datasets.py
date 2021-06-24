@@ -195,20 +195,24 @@ class CustomDataset:
     
     return (ordered_names, c2l)
 
-  def top_k_complementary_labels(main_label, k):
+  def top_k_complementary_labels(self, main_label, k):
     labels = deepcopy(self.labels)
-    labels.remove(main_label)
+    self.logger.info(len(labels))
+    # labels.remove(main_label)
     full_train_data = self.base_dicts["train"]
     occurrences = [0 for label in labels]
+    self.logger.info(len(occurrences))
     for record in full_train_data:
       for annotation in record["annotations"]:
+        # self.logger.info(annotation['category_id'])
         occurrences[annotation['category_id']] += 1
     sorted_indices = sorted(range(len(occurrences)), key = lambda k : occurrences[k], reverse = True)
-    assert k <= len(labels), f"k = {k} is larger than the maximum number of labels = {len(labels)} for the dataset {self.dataset_name}!"
+    sorted_indices.remove(labels.index(main_label)) # remove the value representing the main label from this list; the order of indices remains.
+    assert k <= len(sorted_indices), f"k = {k} is larger than the maximum number of labels = {len(labels)} for the dataset {self.dataset_name}!"
     return [labels[i] for i in sorted_indices[:k]]
 
   # prints the percentage of images that each label is in
-  def print_percentage_of_occurrence_of_label_in_images():
+  def print_percentage_of_occurrence_of_label_in_images(self):
     labels = deepcopy(self.labels)
     full_train_data = self.base_dicts["train"]
     occurrences = [0 for label in labels]
