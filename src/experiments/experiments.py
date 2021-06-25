@@ -32,7 +32,7 @@ from plain_train_net import do_train
 from util.evaluate import evaluate, build_eval_loader
 from copy import copy, deepcopy
 
-def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-2, resolution=20, n_epochs=5):
+def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-3, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
   lrs = 10 ** powers
   best_val = float('-inf')

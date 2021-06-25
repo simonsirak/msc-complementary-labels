@@ -165,6 +165,7 @@ Run on multiple machines:
     # Therefore we use a deterministic way to obtain port,
     # so that users are aware of orphan processes by seeing the port occupied.
     port = 2 ** 15 + 2 ** 14 + hash(os.getuid() if sys.platform != "win32" else 1) % 2 ** 14
+    parser.add_argument("--id", type=int, default=0, help="id of current training session, used to create separate tcp session port for each session in case that matters (not sure if it does)")
     parser.add_argument(
         "--dist-url",
         default="tcp://127.0.0.1:{}".format(port),
@@ -185,12 +186,13 @@ import torch
 if __name__ == "__main__":
     torch.set_num_threads(4)
     args = argument_parser().parse_args()
+    port = 2 ** 15 + 2 ** 14 + hash(os.getuid() if sys.platform != "win32" else 1) % 2 ** 14
     print("Command Line Args:", args)
     launch(
         main,
         args.num_gpus,
         num_machines=args.num_machines,
         # machine_rank=args.machine_rank, # default = 0
-        dist_url=args.dist_url,
+        dist_url="tcp://127.0.0.1:{}".format(port + args.id),
         args=(args,),
     )
