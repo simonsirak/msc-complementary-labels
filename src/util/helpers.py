@@ -190,4 +190,5 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
 def get_lr(dataset, size):
   with open("metrics-lr.json", "r") as fr:
     lrs = json.load(fr)
+    size = ("full" if dataset == "CSAW-S" and size == 263 else size)
     return lrs[dataset][str(size)]

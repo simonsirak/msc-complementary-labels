@@ -101,7 +101,7 @@ def setup_config(args, dataset, ds, training_size):
   cfg.SOLVER.ITERS_PER_EPOCH = cfg.SOLVER.ITERS_PER_EPOCH * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0])) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.ITERS_PER_EPOCH
   cfg.SOLVER.WARMUP_ITERS = int(25 * cfg.SOLVER.ITERS_PER_EPOCH) # warmup for 25 epochs, scales with subset size (assumes LR search is > 25 epochs, like 100 or smthing)
   cfg.SOLVER.MAX_ITER = int(cfg.SOLVER.NUM_EPOCHS * cfg.SOLVER.ITERS_PER_EPOCH)
-
+  cfg.SOLVER.STEPS = (cfg.SOLVER.MAX_ITER+1,) # for debugging
   # TODO: Train for equally long with any amount of data or scale MAX_ITER by dataset fraction?
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
