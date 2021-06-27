@@ -135,9 +135,9 @@ output/
 experimental_results/
 CSAW-S/ 
 *.pkl
-csaw-s-obj.json
+#csaw-s-obj.json
 csaw-s-obj-trainval.json
-csaw-s-obj-test.json
+#csaw-s-obj-test.json
 /hyperparam_search/
 /datasets/
 
