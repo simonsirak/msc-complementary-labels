@@ -31,6 +31,7 @@ from util.COCOEvaluator import COCOEvaluator
 from plain_train_net import do_train
 from util.evaluate import evaluate, build_eval_loader
 from copy import copy, deepcopy
+from util.helpers import save_sample, get_lr
 
 def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-3, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
@@ -132,7 +133,7 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
 
     cfg = setup_config(args, dataset, ds, training_size)
 
-    cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # TODO: set this as input config instead
+    cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
     cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
     cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
@@ -176,7 +177,7 @@ def loo_experiment(args, dataset, training_size=200):
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
       cfg = setup_config(args, dataset, ds, training_size)
-      cfg.SOLVER.BASE_LR = float(0.000046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
       cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, label, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
@@ -215,7 +216,7 @@ def vary_data_experiment(args, dataset, sizes):
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
       cfg = setup_config(args, dataset, ds, size)
-      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
       cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
@@ -257,7 +258,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
       cfg = setup_config(args, dataset, ds, training_size)
-      cfg.SOLVER.BASE_LR = float(0.00046415888336127773) # could instead be assigned to cfg in lr_search but whatever
+      cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
       cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
@@ -281,7 +282,6 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 
 from detectron2.data import build_detection_train_loader
 from util.augmentor import DummyAlbuMapper
-from util.helpers import save_sample
 def sample_experiment(args, dataset, nb_samples=3):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.sample")
   main_label = args.main_label

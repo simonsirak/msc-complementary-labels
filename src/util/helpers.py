@@ -186,3 +186,8 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
     return CustomDataset(labels, main_label, base_dataset, dataset_name, args.output_dir)
   else:
     raise NotImplementedError(f"Dataset {args.dataset} is not supported")
+
+def get_lr(dataset, size):
+  with open("metrics-lr.json", "r") as fr:
+    lrs = json.load(fr)
+    return lrs[dataset][str(size)]
