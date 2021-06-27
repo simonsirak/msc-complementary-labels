@@ -135,7 +135,7 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
 
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
     cfg.TEST.EVAL_PERIOD = int(25 * cfg.SOLVER.ITERS_PER_EPOCH)
-    cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
+    cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, suffix, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
     
     model = build_model(cfg)
