@@ -35,6 +35,7 @@ def build_eval_loader(dataset, *, mapper, sampler=None, num_workers=0, batch_siz
 
   return data_loader
 
+import detectron2.utils.comm as comm
 def evaluate(cfg, model, logger, dataset_index=1):
   # build data loader, essentially equivalent to test loader but 
   # with arbitrary batch size because inference time is not a metric I want.
@@ -57,5 +58,9 @@ def evaluate(cfg, model, logger, dataset_index=1):
       evaluator.process(data, res)
     logger.info("begin coco evaluation...")
     eval_results = evaluator.evaluate()
-    logger.info("finished coco evaluation!")
+    if comm.is_main_process():
+      split = "test" if dataset_index == 1 else "val"
+      logger.info(f"finished coco evaluation! {split} AP = {result['bbox'][MetadataCatalog.get(cfg.DATASETS.TEST[dataset_index]).main_label]['AP']}")
+    else:
+      logger.info("finished coco evaluation!")
   return eval_results
