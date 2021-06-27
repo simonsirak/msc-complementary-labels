@@ -66,11 +66,8 @@ from torch.cuda.amp import autocast, GradScaler
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints=True):
     model.train()
-    optimizer = build_optimizer(cfg, model) # TODO: This returns an SGD optimizer, maybe change to ADAM
+    optimizer = build_optimizer(cfg, model) # uses ADAM
     scheduler = build_lr_scheduler(cfg, optimizer)
-    # either this or "reduce on plateau", reduce on plateau has less hyperparams but might be worse? idk not much research on 
-    # lr scheduling pros and cons.
-    #scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=cfg.SOLVER.BASE_LR, max_lr=cfg.SOLVER.BASE_LR*2,step_size_up=5,mode="triangular2")
 
     checkpointer = DetectionCheckpointer(
         model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler

@@ -49,10 +49,10 @@ def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-3, resolution=20, n_epochs
         model = DistributedDataParallel(
             model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
         )
-    # train 5 epochs
+    
+    # only main process is going to get results here
     val_ap = do_train(cfg, model, resume=False, use_early_stopping=False, save_checkpoints=False) # trains on training data, evaluates on val data
-    #losses.append() # TODO: Add logging of loss every n:th epoch during training.
-    # calc val loss at the end
+
     if val_ap > best_val:
       best_val = val_ap
       best_lr = lr
