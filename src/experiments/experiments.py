@@ -134,7 +134,7 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
     cfg = setup_config(args, dataset, ds, training_size)
 
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-    cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH)
+    cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, suffix, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
     
@@ -178,7 +178,7 @@ def loo_experiment(args, dataset, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, label, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -217,7 +217,7 @@ def vary_data_experiment(args, dataset, sizes):
 
       cfg = setup_config(args, dataset, ds, size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -259,7 +259,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH)
+      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -296,7 +296,7 @@ def sample_experiment(args, dataset, nb_samples=3):
   cfg = setup_config(args, dataset, ds, training_size)
   cfg.TEST.EVAL_PERIOD = 0
   logger.info(f'Configuration used: {cfg}')
-  cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH) # TODO: Fix this when re-adding early stopping
+  cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH)) # TODO: Fix this when re-adding early stopping
 
   model = build_model(cfg)
   distributed = comm.get_world_size() > 1
@@ -365,7 +365,7 @@ def longrun(args, dataset, training_size=200):
     cfg = setup_config(args, dataset, ds, training_size)
 
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-    cfg.TEST.EVAL_PERIOD = int(5 * cfg.SOLVER.ITERS_PER_EPOCH)
+    cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     logger.info(f'Configuration used: {cfg}')
     
     model = build_model(cfg)
