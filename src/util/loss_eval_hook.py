@@ -50,7 +50,7 @@ class EarlyStoppingHook:
           if self.cur_patience > self.patience:
             stop_early = True
       if not np.isnan(self.latest_ap):
-        storage.put_scalar('main_label_AP', self.latest_ap) # avoid NaN-ing up the main label AP plot
+        storage.put_scalar('main_label_AP', self.latest_ap, smoothing_hint=False) # avoid NaN-ing up the main label AP plot
 
     stop_early = True in comm.all_gather(stop_early) # all processes now get the call to stop early! synchronized operation
 

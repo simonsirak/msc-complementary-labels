@@ -15,7 +15,7 @@ import logging
 
 # for experiments
 from util.helpers import extract_dataset
-from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment, vary_data_experiment, vary_labels_experiment
+from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment, vary_data_experiment, vary_labels_experiment, longrun
 def main(args):
   # if args.create_all_datasets:
   # * create subsets for experiments
@@ -94,6 +94,14 @@ def main(args):
     else:
       lr_experiment(args, base_dataset, n_comp=args.num_comp_labels, training_size=args.dataset_size)
     main_logger.info("lr finder finished!")
+  if args.longrun:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering longrun...")
+    if args.dataset == "CSAW-S" and args.dataset_size == 263:
+      longrun(args, base_dataset, training_size="full")
+    else:
+      longrun(args, base_dataset, training_size=args.dataset_size)
+    main_logger.info("longrun finished!")
 
 import argparse 
 import sys
@@ -155,6 +163,7 @@ Run on multiple machines:
     parser.add_argument("--eval", action="store_true", default=False, help="perform evaluation")
     parser.add_argument("--coco", action="store_true", default=False, help="perform coco evaluation")
     parser.add_argument("--lr", action="store_true", default=False, help="learning rate search")
+    parser.add_argument("--longrun", action="store_true", default=False, help="do a longrun with specified dataset size, no complementary labels")
     parser.add_argument("--input-dir", default="output", help="the directory to read input task-related data such as trained models. By default, uses the output of the current executiion")
     parser.add_argument("--output-dir", default="output", help="the directory to output task-related data")
     

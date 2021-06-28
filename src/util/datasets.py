@@ -190,7 +190,7 @@ class CustomDataset:
     # TODO: output this in the output dir instead, so multiple experiments 
     # can run in parallel without overwriting this.
     with open(os.path.join(self.log_dir, 'generated-dataset.json'), 'w') as fp:
-      self.logger.info(base_dicts)
+      # self.logger.info(base_dicts)
       json.dump({"dict": base_dicts, "names": ordered_names, "thing_classes": c2l}, fp)
     
     return (ordered_names, c2l)
