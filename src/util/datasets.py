@@ -114,7 +114,7 @@ class CustomDataset:
           comp_labels = copy(valid_labels)
           comp_labels.remove(self.main_label)
           # random.seed(seed) # TODO: Don't seed here, seed in the beginning of an experiment only. Otherwise it is not pseudorandom.
-          print("all complementary labels: ", comp_labels)
+          self.logger.info(f"all complementary labels: {comp_labels}")
           c2l = random.sample(comp_labels, nb_comp_labels)
           c2l.append(self.main_label) # should always be included
           c2l.sort()
@@ -153,7 +153,7 @@ class CustomDataset:
         DatasetCatalog.remove(name) # remove if exists
 
       DatasetCatalog.register(name, lambda d=split: base_dicts[d])    
-      print("Generated dataset named '", name, "'")
+      self.logger.info(f"Generated dataset named '{name}'")
 
       # METADATA
       if name in MetadataCatalog.list():
@@ -174,7 +174,7 @@ class CustomDataset:
         MetadataCatalog.get(name).set(split=split)
         MetadataCatalog.get(name).set(year=2017)
 
-      print("SPLIT SIZE:", len(base_dicts[split]))
+      self.logger.info(f"SPLIT SIZE: {len(base_dicts[split])}")
 
     self.id = self.id + 1
 
@@ -239,7 +239,7 @@ class CustomDataset:
           DatasetCatalog.remove(name) # remove if exists
 
         DatasetCatalog.register(name, lambda d=split: base_dicts[d])    
-        print("Generated dataset named '", name, "'")
+        self.logger.info(f"Generated dataset named '{name}'")
 
         # METADATA
         if name in MetadataCatalog.list():
@@ -260,5 +260,5 @@ class CustomDataset:
           MetadataCatalog.get(name).set(split=split)
           MetadataCatalog.get(name).set(year=2017)
 
-        print("SPLIT SIZE:", len(base_dicts[split]))
+        self.logger.info(f"SPLIT SIZE: {len(base_dicts[split])}")
       return (ordered_names, c2l)

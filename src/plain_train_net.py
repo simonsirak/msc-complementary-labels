@@ -41,11 +41,11 @@ from detectron2.utils.events import EventStorage
 
 from util.helpers import save_sample, default_writers, load_csaw
 
-logger = logging.getLogger("detectron2")
+# logger = logging.getLogger("detectron2")
 
 from detectron2.engine.hooks import HookBase
 from detectron2.evaluation import inference_context
-from detectron2.utils.logger import log_every_n_seconds
+from detectron2.utils.logger import log_every_n_seconds, setup_logger
 from detectron2.data import DatasetMapper, build_detection_test_loader
 import detectron2.utils.comm as comm
 import torch
@@ -65,6 +65,8 @@ from torch.cuda.amp import autocast, GradScaler
 
 # TODO: Add a "no-checkpointer"-option for the lr search.
 def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints=True):
+    logger = setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="training")
+    
     model.train()
     optimizer = build_optimizer(cfg, model) # uses ADAM
     scheduler = build_lr_scheduler(cfg, optimizer)
@@ -100,7 +102,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
           cfg,
           cfg.TEST.EVAL_PERIOD if use_early_stopping else 0,
           model,
-          "best_model", # TODO: Change to configuration-dependent name e.g that encodes no. comp labels, etc.
+          "best_model",
           cfg.DATASETS.TEST[0],
           checkpointer,
           patience=1,
@@ -168,7 +170,6 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
               save_sample(cfg, model, data[0], "../../samples/sample.jpg")
               model.train()
             
-            # TODO: Uncomment for early stopping
             model.eval()
             stop_early = early_stopping.after_step(iteration, max_iter, storage)
             model.train()
@@ -181,7 +182,6 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
             ):
                 for writer in writers:
                     writer.write()
-            # logger.info("hi")
             
             if save_checkpoints:
               periodic_checkpointer.step(iteration)
@@ -193,9 +193,6 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
 from util.datasets import CustomDataset
 import detectron2.data.datasets.pascal_voc as pascal_voc 
 
-# TODO: Abstract setup (config, metadata stuff)
-# TODO: LR search
-
 import numpy as np
 
 # construct dataset base dictionaries of each split
@@ -205,5 +202,3 @@ import scripts.generate_obj_csaws as csaws
 from detectron2 import model_zoo
 from detectron2.engine import DefaultPredictor
 import random 
-
-#TODO: Look into data loaders and add augmentations to them.

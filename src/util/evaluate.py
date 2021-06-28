@@ -60,7 +60,7 @@ def evaluate(cfg, model, logger, dataset_index=1):
     eval_results = evaluator.evaluate()
     if comm.is_main_process():
       split = "test" if dataset_index == 1 else "val"
-      logger.info(f"finished coco evaluation! {split} AP = {result['bbox'][MetadataCatalog.get(cfg.DATASETS.TEST[dataset_index]).main_label]['AP']}")
+      logger.info(f"finished coco evaluation! {split} AP = {eval_results['bbox'][MetadataCatalog.get(cfg.DATASETS.TEST[dataset_index]).main_label]['AP']}")
     else:
       logger.info("finished coco evaluation!")
   return eval_results

@@ -61,7 +61,7 @@ class EarlyStoppingHook:
     is_final = next_iter == max_iter
     if is_final or (self.period > 0 and next_iter % self.period == 0):
         (_, stop_early) = self.evaluate(cur_iter, storage)
-        print("validation loss hook finished!")
+        self.logger.info("validation hook finished!")
         return stop_early
     # print("validation loss hook finished!")
     return False

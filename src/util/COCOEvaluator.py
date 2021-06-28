@@ -331,10 +331,10 @@ class COCOEvaluator(DatasetEvaluator):
         # from https://github.com/facebookresearch/Detectron/blob/a6a835f5b8208c45d0dce217ce9bbda915f44df7/detectron/datasets/json_dataset_evaluator.py#L222-L252 # noqa
         precisions = coco_eval.eval["precision"]
         # precision has dims (iou, recall, cls, area range, max dets)
-        print(class_names)
-        print(precisions.shape)
+        #print(class_names)
+        #print(precisions.shape)
         # assert len(class_names) == precisions.shape[2]
-        print(precisions.shape)
+        #print(precisions.shape)
 
         results_per_category = []
         full_results_per_category = []
@@ -375,7 +375,7 @@ class COCOEvaluator(DatasetEvaluator):
         results_flatten = list(itertools.chain(*full_results_per_category))
         #results_2d = itertools.zip_longest(*[results_flatten[i::N_COLS] for i in range(N_COLS)])
         results_2d = [results_flatten[i*7:(i+1)*7] for i in range(N_COLS // 7)]
-        print(results_2d)
+        #print(results_2d)
         table = tabulate(
             results_2d,
             tablefmt="pipe",
@@ -383,8 +383,8 @@ class COCOEvaluator(DatasetEvaluator):
             headers=["category", "AP", "AP50", "AP75", "APs", "APm", "APl"],
             numalign="left",
         )
-        print("done tabulating\n")
-        print(table)
+        #print("done tabulating\n")
+        #print(table)
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
         # END CHANGE
         results.update({name: {"AP": ap, "AP50": ap50, "AP75": ap75, "APs": aps, "APm": apm, "APl": apl} for name, ap, ap50, ap75, aps, apm, apl in full_results_per_category})
