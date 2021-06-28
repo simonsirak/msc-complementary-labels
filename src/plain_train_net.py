@@ -105,7 +105,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
           "best_model",
           cfg.DATASETS.TEST[0],
           checkpointer,
-          patience=3,
+          patience=10,
           save_checkpoints=save_checkpoints
         )
     
