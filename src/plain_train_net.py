@@ -167,7 +167,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
             # ):
             if iteration % 100 == 0:
               model.eval()
-              save_sample(cfg, model, data[0], "../../samples/sample.jpg")
+              save_sample(cfg, model, data[0], os.path.join(cfg.OUTPUT_DIR, "sample.jpg"), storage=storage)
               model.train()
             
             model.eval()

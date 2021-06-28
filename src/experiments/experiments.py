@@ -364,6 +364,7 @@ def longrun(args, dataset, training_size=200):
 
     cfg = setup_config(args, dataset, ds, training_size)
 
+    cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
     cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     logger.info(f'Configuration used: {cfg}')

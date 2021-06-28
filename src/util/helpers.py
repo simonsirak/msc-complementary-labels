@@ -8,10 +8,8 @@ import copy
 from .augmentor import DummyAlbuMapper
 from detectron2.utils import comm
 
-def save_sample(cfg, model, data_dict, dst_path, show=False):
-  old_threshold = cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST
+def save_sample(cfg, model, data_dict, dst_path, show=False, storage=None):
   with torch.no_grad():
-    # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
     outputs = model([data_dict])
 
     img = data_dict["image"]
@@ -21,7 +19,6 @@ def save_sample(cfg, model, data_dict, dst_path, show=False):
         metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
         scale=1)
     out = v.draw_instance_predictions(outputs[0]["instances"].to("cpu"))
-    #out = v.draw_dataset_dict(data_dict)
 
     if show:
       cv2.imshow(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
@@ -29,7 +26,9 @@ def save_sample(cfg, model, data_dict, dst_path, show=False):
       cv2.destroyWindow(dst_path)
     else:
       cv2.imwrite(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = old_threshold
+
+    if storage is not None:
+      storage.put_image('sample', out.get_image().transpose(2,0,1)) # C H W, RGB
 
 import os 
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
