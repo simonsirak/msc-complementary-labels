@@ -15,7 +15,7 @@ import logging
 
 # for experiments
 from util.helpers import extract_dataset
-from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment, vary_data_experiment, vary_labels_experiment, longrun
+from experiments.experiments import base_experiment, loo_experiment, sample_experiment, lr_experiment, vary_data_experiment, vary_labels_experiment, longrun, coco
 def main(args):
   # if args.create_all_datasets:
   # * create subsets for experiments
@@ -94,6 +94,7 @@ def main(args):
     else:
       lr_experiment(args, base_dataset, n_comp=args.num_comp_labels, training_size=args.dataset_size)
     main_logger.info("lr finder finished!")
+
   if args.longrun:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering longrun...")
@@ -102,6 +103,12 @@ def main(args):
     else:
       longrun(args, base_dataset, training_size=args.dataset_size)
     main_logger.info("longrun finished!")
+
+  if args.coco:
+    seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
+    main_logger.info("Entering coco eval...")
+    coco(args, base_dataset, weights_path=args.weights_path, nb_comp_labels=args.num_comp_labels)
+    main_logger.info("coco eval finished!")
 
 import argparse 
 import sys
@@ -162,6 +169,7 @@ Run on multiple machines:
 
     parser.add_argument("--eval", action="store_true", default=False, help="perform evaluation")
     parser.add_argument("--coco", action="store_true", default=False, help="perform coco evaluation")
+    parser.add_argument("--weights-path", default=".", help="the path to model weights; only needed for --coco")
     parser.add_argument("--lr", action="store_true", default=False, help="learning rate search")
     parser.add_argument("--longrun", action="store_true", default=False, help="do a longrun with specified dataset size, no complementary labels")
     parser.add_argument("--input-dir", default="output", help="the directory to read input task-related data such as trained models. By default, uses the output of the current executiion")
@@ -193,7 +201,7 @@ Run on multiple machines:
 
 import torch
 if __name__ == "__main__":
-    torch.set_num_threads(4)
+    torch.set_num_threads(8)
     args = argument_parser().parse_args()
     port = 2 ** 15 + 2 ** 14 + hash(os.getuid() if sys.platform != "win32" else 1) % 2 ** 14
     print("Command Line Args:", args)

@@ -105,7 +105,7 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
           "best_model",
           cfg.DATASETS.TEST[0],
           checkpointer,
-          patience=20,
+          patience=10,
           save_checkpoints=save_checkpoints
         )
     
@@ -187,7 +187,8 @@ def do_train(cfg, model, resume=False, use_early_stopping=True, save_checkpoints
               periodic_checkpointer.step(iteration)
 
             if stop_early and use_early_stopping:
-              checkpointer.load(os.path.join(cfg.OUTPUT_DIR, early_stopping.model_name, ".pth"))
+              checkpointer.save("last_checkpoint")
+              checkpointer.load(os.path.join(cfg.OUTPUT_DIR, f"{early_stopping.model_name}.pth"))
               break
     return early_stopping.max_ap if use_early_stopping else early_stopping.latest_ap # for learning rate evaluation/experiment evaluation
 

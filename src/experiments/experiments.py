@@ -134,7 +134,7 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
     cfg = setup_config(args, dataset, ds, training_size)
 
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-    cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
+    cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, suffix, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
     
@@ -178,7 +178,7 @@ def loo_experiment(args, dataset, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
+      cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, label, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -217,7 +217,7 @@ def vary_data_experiment(args, dataset, sizes):
 
       cfg = setup_config(args, dataset, ds, size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
+      cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -259,7 +259,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-      cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
+      cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
@@ -296,7 +296,7 @@ def sample_experiment(args, dataset, nb_samples=3):
   cfg = setup_config(args, dataset, ds, training_size)
   cfg.TEST.EVAL_PERIOD = 0
   logger.info(f'Configuration used: {cfg}')
-  cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH)) # TODO: Fix this when re-adding early stopping
+  cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH)) # TODO: Fix this when re-adding early stopping
 
   model = build_model(cfg)
   distributed = comm.get_world_size() > 1
@@ -366,7 +366,7 @@ def longrun(args, dataset, training_size=200):
 
     cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
-    cfg.TEST.EVAL_PERIOD = max(100, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
+    cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     logger.info(f'Configuration used: {cfg}')
     
     model = build_model(cfg)
@@ -384,4 +384,41 @@ def longrun(args, dataset, training_size=200):
   
   if comm.is_main_process():
     with open(os.path.join(args.output_dir, "metrics-longrun.json"), 'w') as fp:
+      json.dump(main_label_metrics, fp)
+
+def coco(args, dataset, weights_path, nb_comp_labels):
+  logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name=f"experiments.cocoeval")
+  
+  main_label = dataset.main_label
+  main_label_metrics = []
+  for i in range(1): # repeat many times
+    # no complementaries, should be identical across all processes since seed is set just before this
+    if comm.is_main_process():
+      ds, _ = dataset.subset(f"{args.dataset}_cocoeval", nb_comp_labels=nb_comp_labels, size=5, iteration=i+1)
+
+    comm.synchronize()
+    ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
+
+    cfg = setup_config(args, dataset, ds, training_size)
+
+    cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
+    logger.info(f'Configuration used: {cfg}')
+    
+    model = build_model(cfg)
+    distributed = comm.get_world_size() > 1
+    if distributed:
+      model = DistributedDataParallel(
+          model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+      )
+
+    DetectionCheckpointer(model).load(weights_path)
+        
+    do_train(cfg, model)
+
+    model.eval()
+    main_label_metrics.append(evaluate(cfg, model, logger))
+    model.train()
+  
+  if comm.is_main_process():
+    with open(os.path.join(args.output_dir, "metrics-cocoeval.json"), 'w') as fp:
       json.dump(main_label_metrics, fp)

@@ -173,7 +173,7 @@ def extract_dataset(dataset_name, main_label, args): # TODO: Add base path arg
     register_coco_instances("cocotrain", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_train2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/train2017"))
     # register_coco_instances("cocotrain", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_val2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/val2017"))
     register_coco_instances("cocoval", {}, os.path.join(args.dataset_path, "MSCOCO/coco/annotations/instances_val2017.json"), os.path.join(args.dataset_path, "MSCOCO/coco/val2017"))
-    rng = default_rng(seed=comm.shared_random_seed())
+    rng = default_rng(seed=404) # to guarantee same validation split across experiments!
     shuffled_training = DatasetCatalog.get("cocotrain")
     rng.shuffle(shuffled_training) # in-place shuffling
     base_dataset = {
