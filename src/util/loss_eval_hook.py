@@ -42,7 +42,7 @@ class EarlyStoppingHook:
       if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap:
         self.cur_patience = 0
         self.max_ap = self.latest_ap
-        if self.save_checkpoints:
+        if comm.is_main_process() and self.save_checkpoints:
           self.checkpointer.save(self.model_name)
       else:
         if not np.isinf(self.max_ap): # only start early stopping if we have actually gotten at least a passable model
