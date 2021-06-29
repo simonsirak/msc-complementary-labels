@@ -399,7 +399,7 @@ def coco(args, dataset, weights_path, nb_comp_labels):
     comm.synchronize()
     ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
 
-    cfg = setup_config(args, dataset, ds, training_size)
+    cfg = setup_config(args, dataset, ds, 5)
 
     cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
     logger.info(f'Configuration used: {cfg}')
@@ -413,8 +413,6 @@ def coco(args, dataset, weights_path, nb_comp_labels):
 
     DetectionCheckpointer(model).load(weights_path)
         
-    do_train(cfg, model)
-
     model.eval()
     main_label_metrics.append(evaluate(cfg, model, logger))
     model.train()
