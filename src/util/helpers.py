@@ -191,3 +191,9 @@ def get_lr(dataset, size):
     lrs = json.load(fr)
     size = ("full" if dataset == "CSAW-S" and size == 263 else size)
     return lrs[dataset][str(size)]
+
+def get_decay_step(dataset, size):
+  with open("decay-steps.json", "r") as fr:
+    lrs = json.load(fr)
+    size = ("full" if dataset == "CSAW-S" and size == 263 else size)
+    return lrs[dataset][str(size)]

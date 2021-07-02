@@ -31,7 +31,7 @@ from util.COCOEvaluator import COCOEvaluator
 from plain_train_net import do_train
 from util.evaluate import evaluate, build_eval_loader
 from copy import copy, deepcopy
-from util.helpers import save_sample, get_lr
+from util.helpers import save_sample, get_lr, get_decay_step
 
 def lr_search(cfg, logger, lr_min_pow=-5, lr_max_pow=-3, resolution=20, n_epochs=5):
   powers = np.linspace(lr_min_pow, lr_max_pow, resolution)
@@ -101,7 +101,7 @@ def setup_config(args, dataset, ds, training_size):
   cfg.SOLVER.ITERS_PER_EPOCH = cfg.SOLVER.ITERS_PER_EPOCH * cfg.DATASETS.TRAIN_SIZE / len(DatasetCatalog.get(ds[0])) if cfg.INPUT.DATASET_NAME == "CSAW-S" else cfg.SOLVER.ITERS_PER_EPOCH
   cfg.SOLVER.WARMUP_ITERS = int(25 * cfg.SOLVER.ITERS_PER_EPOCH) # warmup for 25 epochs, scales with subset size (assumes LR search is > 25 epochs, like 100 or smthing)
   cfg.SOLVER.MAX_ITER = int(cfg.SOLVER.NUM_EPOCHS * cfg.SOLVER.ITERS_PER_EPOCH)
-  # cfg.SOLVER.STEPS = (cfg.SOLVER.MAX_ITER+1,) # for debugging
+  cfg.SOLVER.STEPS = (cfg.SOLVER.MAX_ITER+1,) # for debugging/llongruns
   # TODO: Train for equally long with any amount of data or scale MAX_ITER by dataset fraction?
   # lr_cfg.TEST.EVAL_PERIOD = int(round(len(DatasetCatalog.get(split_names[0])) / cfg.SOLVER.IMS_PER_BATCH)) # = 1 epoch
   cfg.TEST.EVAL_PERIOD = 0 # only check validation loss at the end of the lr search
@@ -134,6 +134,7 @@ def base_experiment(args, dataset, training_size=200, use_complementary_labels=F
     cfg = setup_config(args, dataset, ds, training_size)
 
     cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
+    cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
     cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
     cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, suffix, f"run_{i+1}")
     logger.info(f'Configuration used: {cfg}')
@@ -178,6 +179,7 @@ def loo_experiment(args, dataset, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
+      cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
       cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, label, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
@@ -217,6 +219,7 @@ def vary_data_experiment(args, dataset, sizes):
 
       cfg = setup_config(args, dataset, ds, size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
+      cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
       cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
@@ -259,6 +262,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 
       cfg = setup_config(args, dataset, ds, training_size)
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
+      cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
       cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
       cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
