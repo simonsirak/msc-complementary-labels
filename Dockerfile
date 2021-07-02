@@ -2,7 +2,7 @@
 # https://github.com/kaust-vislab/python-data-science-project/blob/master/docker/Dockerfile
 # https://hub.docker.com/r/anibali/pytorch/dockerfile
 # https://github.com/pytorch/pytorch/blob/master/docker/pytorch/Dockerfile
-FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu16.04
+FROM nvidia/cuda:10.2-cudnn7-devel-ubuntu18.04
  
 SHELL [ "/bin/bash", "--login", "-c" ]
  
