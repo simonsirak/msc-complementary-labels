@@ -221,7 +221,7 @@ def vary_data_experiment(args, dataset, sizes):
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
       cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
       cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
-      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
+      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, size, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
@@ -264,7 +264,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
       cfg.SOLVER.BASE_LR = get_lr(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE)
       cfg.SOLVER.STEPS = (get_decay_step(cfg.INPUT.DATASET_NAME, cfg.DATASETS.TRAIN_SIZE),)
       cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH))
-      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, f"run_{i+1}")
+      cfg.OUTPUT_DIR = os.path.join(cfg.BASE_OUTPUT_DIR, size, f"run_{i+1}")
       logger.info(f'Configuration used: {cfg}')
 
       model = build_model(cfg)
