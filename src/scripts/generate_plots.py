@@ -52,7 +52,10 @@ def differential(labels, data, main_label, args):
   ys_array = [np.asarray(y) for y in ys]
   baseline_mean = np.mean(baseline)
   # ci = 1.96 * np.std(ys_array, axis=1)/y_mean
-  fig, ax = plt.subplots()
+  fig, ax = plt.subplots(figsize=(10,6))
+  for tick in ax.get_xticklabels():
+    tick.set_rotation(45)
+    tick.set_ha('right')
   # print(y_mean, labels)
   added_artists = plotter('box', ax, labels, ys_array, {
     "notch": True, 
@@ -63,7 +66,11 @@ def differential(labels, data, main_label, args):
   ax.axhline(y=baseline_mean, color='r', linestyle='--')
   ax.set_ylabel('AP')
   ax.set_title(f"{args.experiment}, {args.dataset}")
-  plt.show()
+
+  plt.autoscale()
+  plt.tight_layout()
+  plt.savefig(os.path.join(args.path, f"{args.experiment}-{args.dataset}.png"), dpi=300)
+  # plt.show()
 
 import seaborn as sns
 import pandas as pd
@@ -85,7 +92,7 @@ def graph(x, data, main_label, args):
     ys_array = np.asarray(ys)
     # y_mean = np.mean(ys_array, axis=1)
     # ci = 1.96 * np.std(ys_array, axis=1)/y_mean
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10,6))
     ax.set_xticks(x)
     ax.set_xticklabels(x)
     # print(np.zeros((len(x), 5), dtype=np.int).T + np.asarray(x, dtype=np.int))
@@ -106,16 +113,12 @@ def graph(x, data, main_label, args):
     # added_artists = plotter('line', ax, x, y_mean, {'marker': 'o'})
     ax.set_title(f"{args.experiment}, {args.dataset}")
     # ax.fill_between(x, (y_mean-ci), (y_mean+ci), alpha=.1)
-<<<<<<< HEAD
-=======
-    plt.show()
->>>>>>> 66bb4fc67f467d3136eea2031f08346b1213696a
   elif len(x) == 2:
     ys_all = np.asarray(processed_data[0])
     x_all = x[0]
     # y_mean = np.mean(ys_array, axis=1)
     # ci = 1.96 * np.std(ys_array, axis=1)/y_mean
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(12,8))
     ax.set_xticks(x_all)
     ax.set_xticklabels(x_all)
     # print(np.zeros((len(x), 5), dtype=np.int).T + np.asarray(x, dtype=np.int))
@@ -148,7 +151,11 @@ def graph(x, data, main_label, args):
     ax.set_title(f"{args.experiment}, {args.dataset}")
     # ax.fill_between(x, (y_mean-ci), (y_mean+ci), alpha=.1)
 
-  plt.savefig(f"{args.experiment}-{args.dataset}.png")
+  # for tick in ax.get_xticklabels():
+  #   tick.set_rotation(90)
+  plt.autoscale()
+  plt.tight_layout()
+  plt.savefig(os.path.join(args.path, f"{args.experiment}-{args.dataset}.png"), dpi=300)
   # plt.show()
 
 def bar(data):
@@ -213,8 +220,6 @@ def main(args):
       data_x_zero.append(263 if args.dataset == "CSAW-S" else 256)
 
       graph([data_x, data_x_zero], [data, data_zero], main_label, args)
-
-      plt.show()
 
   elif args.plot == "differential":
     labels = [path.split('/')[-1].split('.')[0].split('-')[-1] for path in paths]
