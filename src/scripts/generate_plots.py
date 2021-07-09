@@ -106,6 +106,10 @@ def graph(x, data, main_label, args):
     # added_artists = plotter('line', ax, x, y_mean, {'marker': 'o'})
     ax.set_title(f"{args.experiment}, {args.dataset}")
     # ax.fill_between(x, (y_mean-ci), (y_mean+ci), alpha=.1)
+<<<<<<< HEAD
+=======
+    plt.show()
+>>>>>>> 66bb4fc67f467d3136eea2031f08346b1213696a
   elif len(x) == 2:
     ys_all = np.asarray(processed_data[0])
     x_all = x[0]
