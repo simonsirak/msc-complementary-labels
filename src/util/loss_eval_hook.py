@@ -39,9 +39,10 @@ class EarlyStoppingHook:
       ap = result['bbox'][MetadataCatalog.get(self.dataset_name).main_label]['AP']
 
       self.latest_ap = ap
-      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap:
+      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap - 1: # 1 AP is the margin of error that I consider acceptable
         self.cur_patience = 0
-        self.max_ap = self.latest_ap
+        if self.latest_ap > self.max_ap:
+          self.max_ap = self.latest_ap
         if comm.is_main_process() and self.save_checkpoints:
           self.checkpointer.save(self.model_name)
       else:
