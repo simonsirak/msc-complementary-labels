@@ -39,7 +39,7 @@ class EarlyStoppingHook:
       ap = result['bbox'][MetadataCatalog.get(self.dataset_name).main_label]['AP']
 
       self.latest_ap = ap
-      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap - 1: # 1 AP is the margin of error that I consider acceptable
+      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap - 0.2: # 0.2 AP is the margin of error that I consider acceptable
         self.cur_patience = 0
         if self.latest_ap > self.max_ap:
           self.max_ap = self.latest_ap
