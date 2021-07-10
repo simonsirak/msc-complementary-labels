@@ -172,7 +172,7 @@ def loo_experiment(args, dataset, training_size=200):
       
       # if subsets are used, this makes sure each repetition gets its own subset
       if comm.is_main_process():
-        ds, _ = dataset.subset(f"{args.dataset}_leave_out_{label}", leave_out=label, size=training_size)
+        ds, _ = dataset.subset(f"{args.dataset}_leave_out_{label}", leave_out=label, size=training_size, iteration=i+1)
 
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
@@ -212,7 +212,7 @@ def vary_data_experiment(args, dataset, sizes):
     for i in range(5): # repeat many times
 
       if comm.is_main_process():
-        ds, _ = dataset.subset(f"{args.dataset}_subset_size_{size}", nb_comp_labels=nb_comp_labels, size=size)
+        ds, _ = dataset.subset(f"{args.dataset}_subset_size_{size}", nb_comp_labels=nb_comp_labels, size=size, iteration=i+1)
 
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
@@ -255,7 +255,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
     for i in range(5): # repeat many times
 
       if comm.is_main_process():
-        ds, _ = dataset.subset(f"{args.dataset}_label_subset_size_{size}", nb_comp_labels=size, size=training_size)
+        ds, _ = dataset.subset(f"{args.dataset}_label_subset_size_{size}", nb_comp_labels=size, size=training_size, iteration=i+1)
 
       comm.synchronize()
       ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
