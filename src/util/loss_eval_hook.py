@@ -64,7 +64,7 @@ class EarlyStoppingHook:
           cur_mov = self.moving_ap.get_value()
           
           # if moving avg is at least a bit higher than max recorded moving avg
-          if cur_mov > self.max_ap + 0.1
+          if cur_mov > self.max_ap + 0.1:
             # reset patience
             self.cur_patience = 0
 
