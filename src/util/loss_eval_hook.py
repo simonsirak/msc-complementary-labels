@@ -15,6 +15,18 @@ from detectron2.utils.logger import setup_logger
 
 from .evaluate import evaluate
 
+# MovingMeans taken from ChrisMats
+class MovingMeans:
+    def __init__(self, window=5):
+        self.window = window
+        self.values = []
+        
+    def add(self, val):
+        self.values.append(val)
+        
+    def get_value(self):
+        return np.convolve(np.array(self.values), np.ones((self.window,))/self.window, mode='valid')[-1]
+
 # TODO: ADD PATIENCE AND BEST MODEL, AND STOP IF PATIENCE EXCEEDED
 class EarlyStoppingHook:
   def __init__(self, cfg, eval_period, model, model_name, dataset_name, checkpointer, patience=0, save_checkpoints=True):
@@ -28,6 +40,7 @@ class EarlyStoppingHook:
     self.checkpointer = checkpointer
     self.max_ap = float('-inf')
     self.latest_ap = float('-inf') 
+    self.moving_ap = MovingMeans(window=10)
     self.save_checkpoints = save_checkpoints
     self.logger = setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="earlystopping")
     
@@ -39,19 +52,37 @@ class EarlyStoppingHook:
       ap = result['bbox'][MetadataCatalog.get(self.dataset_name).main_label]['AP']
 
       self.latest_ap = ap
-      if not np.isnan(self.latest_ap) and self.latest_ap > self.max_ap - 0.2: # 0.2 AP is the margin of error that I consider acceptable
-        self.cur_patience = 0
-        if self.latest_ap > self.max_ap:
-          self.max_ap = self.latest_ap
-        if comm.is_main_process() and self.save_checkpoints:
-          self.checkpointer.save(self.model_name)
+      if not np.isnan(self.latest_ap):
+        # tensorboard plot
+        storage.put_scalar('main_label_AP', self.latest_ap, smoothing_hint=False) # avoid NaN-ing up the main label AP plot
+        
+        # moving means logic
+        self.moving_ap.add(self.latest_ap)
+        
+        # begin earlystopping logic once buffer is filled with sensible values
+        if len(self.moving_ap.values) > self.moving_ap.window:
+          cur_mov = self.moving_ap.get_value()
+          
+          # if moving avg is at least a bit higher than max recorded moving avg
+          if cur_mov > self.max_ap + 0.1
+            # reset patience
+            self.cur_patience = 0
+
+            # update new maximum
+            self.max_ap = cur_mov
+            if self.save_checkpoints:
+              self.checkpointer.save(self.model_name)
+          else:
+            self.cur_patience += 1
+            if self.cur_patience > self.patience:
+              stop_early = True
       else:
-        if not np.isinf(self.max_ap): # only start early stopping if we have actually gotten at least a passable model
+        # if we have gotten a passable model before, do earlystopping logic
+        # otherwise, do nothing since it is still early in training
+        if not np.isinf(self.max_ap):
           self.cur_patience += 1
           if self.cur_patience > self.patience:
             stop_early = True
-      if not np.isnan(self.latest_ap):
-        storage.put_scalar('main_label_AP', self.latest_ap, smoothing_hint=False) # avoid NaN-ing up the main label AP plot
 
     stop_early = True in comm.all_gather(stop_early) # all processes now get the call to stop early! synchronized operation
 
@@ -62,7 +93,7 @@ class EarlyStoppingHook:
     is_final = next_iter == max_iter
     if is_final or (self.period > 0 and next_iter % self.period == 0):
         (_, stop_early) = self.evaluate(cur_iter, storage)
-        self.logger.info("validation hook finished!")
+        # self.logger.info("validation hook finished!")
         return stop_early
     # print("validation loss hook finished!")
     return False
