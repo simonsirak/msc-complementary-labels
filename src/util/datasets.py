@@ -103,7 +103,7 @@ class CustomDataset:
         c2l.remove(leave_out)
         c2l.sort()
 
-        self.logger.info("leaving out complementary label:", leave_out)
+        self.logger.info(f"leaving out complementary label: {leave_out}")
       else:
         if manual_comp_labels is not None:
           c2l = copy(manual_comp_labels)

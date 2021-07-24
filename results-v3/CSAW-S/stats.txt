@@ -1,0 +1,8 @@
+[07/19 19:43:37] datasets INFO: label foreign_object occurs in 3.0436740207113915% of the images.
+[07/19 19:43:37] datasets INFO: label axillary_lymph_nodes occurs in 4.3809095002251235% of the images.
+[07/19 19:43:37] datasets INFO: label non-mammary_tissue occurs in 8.090950022512382% of the images.
+[07/19 19:43:37] datasets INFO: label text occurs in 11.170643854119765% of the images.
+[07/19 19:43:37] datasets INFO: label calcifications occurs in 13.061683926159388% of the images.
+[07/19 19:43:37] datasets INFO: label nipple occurs in 13.908149482215219% of the images.
+[07/19 19:43:37] datasets INFO: label cancer occurs in 16.956325979288607% of the images.
+[07/19 19:43:37] datasets INFO: label thick_vessels occurs in 29.720846465556058% of the images.

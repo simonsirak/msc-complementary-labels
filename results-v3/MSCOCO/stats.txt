@@ -1,0 +1,160 @@
+[07/19 19:14:30] datasets INFO: label person occurs in 54.17363756095825% of the images.
+[07/19 19:14:30] datasets INFO: label bicycle occurs in 2.746235717082547% of the images.
+[07/19 19:14:30] datasets INFO: label car occurs in 10.366461396077314% of the images.
+[07/19 19:14:30] datasets INFO: label motorcycle occurs in 2.964261559819172% of the images.
+[07/19 19:14:30] datasets INFO: label airplane occurs in 2.5237603673512976% of the images.
+[07/19 19:14:30] datasets INFO: label bus occurs in 3.353148471149397% of the images.
+[07/19 19:14:30] datasets INFO: label train occurs in 3.024774854946072% of the images.
+[07/19 19:14:30] datasets INFO: label truck occurs in 5.161428113764995% of the images.
+[07/19 19:14:30] datasets INFO: label boat occurs in 2.5638059303029226% of the images.
+[07/19 19:14:30] datasets INFO: label traffic light occurs in 3.4964225963763216% of the images.
+[07/19 19:14:30] datasets INFO: label fire hydrant occurs in 1.4514291816466736% of the images.
+[07/19 19:14:30] datasets INFO: label stop sign occurs in 1.4674474068273236% of the images.
+[07/19 19:14:30] datasets INFO: label parking meter occurs in 0.5997935428754494% of the images.
+[07/19 19:14:30] datasets INFO: label bench occurs in 4.68889047093582% of the images.
+[07/19 19:14:30] datasets INFO: label bird occurs in 2.758694336667497% of the images.
+[07/19 19:14:30] datasets INFO: label cat occurs in 3.4501477236322216% of the images.
+[07/19 19:14:30] datasets INFO: label dog occurs in 3.7055494251236962% of the images.
+[07/19 19:14:30] datasets INFO: label horse occurs in 2.5068522407717224% of the images.
+[07/19 19:14:30] datasets INFO: label sheep occurs in 1.2823479158509237% of the images.
+[07/19 19:14:30] datasets INFO: label cow occurs in 1.6703449257822234% of the images.
+[07/19 19:14:30] datasets INFO: label elephant occurs in 1.8278574733919482% of the images.
+[07/19 19:14:30] datasets INFO: label bear occurs in 0.8133698786174491% of the images.
+[07/19 19:14:30] datasets INFO: label zebra occurs in 1.6285195600327484% of the images.
+[07/19 19:14:30] datasets INFO: label giraffe occurs in 2.1491118784038727% of the images.
+[07/19 19:14:30] datasets INFO: label backpack occurs in 4.679101555547645% of the images.
+[07/19 19:14:30] datasets INFO: label umbrella occurs in 3.3344605417719717% of the images.
+[07/19 19:14:30] datasets INFO: label handbag occurs in 5.793258107001744% of the images.
+[07/19 19:14:30] datasets INFO: label tie occurs in 3.231231979496672% of the images.
+[07/19 19:14:30] datasets INFO: label suitcase occurs in 2.021855978357598% of the images.
+[07/19 19:14:30] datasets INFO: label frisbee occurs in 1.8412059943758232% of the images.
+[07/19 19:14:30] datasets INFO: label skis occurs in 2.5949524792652974% of the images.
+[07/19 19:14:30] datasets INFO: label snowboard occurs in 1.3980350977111735% of the images.
+[07/19 19:14:30] datasets INFO: label sports ball occurs in 3.5943117502580715% of the images.
+[07/19 19:14:30] datasets INFO: label kite occurs in 1.9070586978962731% of the images.
+[07/19 19:14:30] datasets INFO: label baseball bat occurs in 2.104616808457623% of the images.
+[07/19 19:14:30] datasets INFO: label baseball glove occurs in 2.2167443847221726% of the images.
+[07/19 19:14:30] datasets INFO: label skateboard occurs in 2.939344320649272% of the images.
+[07/19 19:14:30] datasets INFO: label surfboard occurs in 2.926885701064322% of the images.
+[07/19 19:14:30] datasets INFO: label tennis racket occurs in 2.8717118143309723% of the images.
+[07/19 19:14:30] datasets INFO: label bottle occurs in 7.211760936888193% of the images.
+[07/19 19:14:30] datasets INFO: label wine glass occurs in 2.1446623714092476% of the images.
+[07/19 19:14:30] datasets INFO: label cup occurs in 7.768839212615243% of the images.
+[07/19 19:14:30] datasets INFO: label fork occurs in 3.007866728366497% of the images.
+[07/19 19:14:30] datasets INFO: label knife occurs in 3.6628341579752965% of the images.
+[07/19 19:14:30] datasets INFO: label spoon occurs in 2.991848503185847% of the images.
+[07/19 19:14:30] datasets INFO: label bowl occurs in 6.031751681913644% of the images.
+[07/19 19:14:30] datasets INFO: label banana occurs in 1.8910404727156231% of the images.
+[07/19 19:14:30] datasets INFO: label apple occurs in 1.3304025913928736% of the images.
+[07/19 19:14:30] datasets INFO: label sandwich occurs in 1.998718541985548% of the images.
+[07/19 19:14:30] datasets INFO: label orange occurs in 1.4238422382799987% of the images.
+[07/19 19:14:30] datasets INFO: label broccoli occurs in 1.6418680810166233% of the images.
+[07/19 19:14:30] datasets INFO: label carrot occurs in 1.4274018438756986% of the images.
+[07/19 19:14:30] datasets INFO: label hot dog occurs in 1.027836115758374% of the images.
+[07/19 19:14:30] datasets INFO: label pizza occurs in 2.6777133093653225% of the images.
+[07/19 19:14:30] datasets INFO: label donut occurs in 1.2912469298401736% of the images.
+[07/19 19:14:30] datasets INFO: label cake occurs in 2.4748157904104224% of the images.
+[07/19 19:14:30] datasets INFO: label chair occurs in 10.76424732139679% of the images.
+[07/19 19:14:30] datasets INFO: label couch occurs in 3.7286868614957465% of the images.
+[07/19 19:14:30] datasets INFO: label potted plant occurs in 3.7838607482290962% of the images.
+[07/19 19:14:30] datasets INFO: label bed occurs in 3.124443811625672% of the images.
+[07/19 19:14:30] datasets INFO: label dining table occurs in 9.985583597337415% of the images.
+[07/19 19:14:30] datasets INFO: label toilet occurs in 2.840565265368597% of the images.
+[07/19 19:14:30] datasets INFO: label tv occurs in 3.833695226568896% of the images.
+[07/19 19:14:30] datasets INFO: label laptop occurs in 2.968711066813797% of the images.
+[07/19 19:14:30] datasets INFO: label mouse occurs in 1.5858042928843483% of the images.
+[07/19 19:14:30] datasets INFO: label remote occurs in 2.6065211974513223% of the images.
+[07/19 19:14:30] datasets INFO: label keyboard occurs in 1.7878119104403232% of the images.
+[07/19 19:14:30] datasets INFO: label cell phone occurs in 4.0615099846936955% of the images.
+[07/19 19:14:30] datasets INFO: label microwave occurs in 1.3117146620154487% of the images.
+[07/19 19:14:30] datasets INFO: label oven occurs in 2.4329904246609475% of the images.
+[07/19 19:14:30] datasets INFO: label toaster occurs in 0.18331968817854982% of the images.
+[07/19 19:14:30] datasets INFO: label sink occurs in 3.971629943402271% of the images.
+[07/19 19:14:30] datasets INFO: label refrigerator occurs in 1.992489232193073% of the images.
+[07/19 19:14:30] datasets INFO: label book occurs in 4.499341472964796% of the images.
+[07/19 19:14:30] datasets INFO: label clock occurs in 3.961841028014096% of the images.
+[07/19 19:14:30] datasets INFO: label vase occurs in 3.018545545153597% of the images.
+[07/19 19:14:30] datasets INFO: label scissors occurs in 0.7973516534367993% of the images.
+[07/19 19:14:30] datasets INFO: label teddy bear occurs in 1.8109493468123732% of the images.
+[07/19 19:14:30] datasets INFO: label hair drier occurs in 0.15840244900864983% of the images.
+[07/19 19:14:30] datasets INFO: label toothbrush occurs in 0.8480760331755242% of the images.
+[07/19 19:26:55] datasets INFO: label hair drier occurs in 0.15840244900864983% of the images.
+[07/19 19:26:55] datasets INFO: label toaster occurs in 0.18331968817854982% of the images.
+[07/19 19:26:55] datasets INFO: label parking meter occurs in 0.5997935428754494% of the images.
+[07/19 19:26:55] datasets INFO: label scissors occurs in 0.7973516534367993% of the images.
+[07/19 19:26:55] datasets INFO: label bear occurs in 0.8133698786174491% of the images.
+[07/19 19:26:55] datasets INFO: label toothbrush occurs in 0.8480760331755242% of the images.
+[07/19 19:26:55] datasets INFO: label hot dog occurs in 1.027836115758374% of the images.
+[07/19 19:26:55] datasets INFO: label sheep occurs in 1.2823479158509237% of the images.
+[07/19 19:26:55] datasets INFO: label donut occurs in 1.2912469298401736% of the images.
+[07/19 19:26:55] datasets INFO: label microwave occurs in 1.3117146620154487% of the images.
+[07/19 19:26:55] datasets INFO: label apple occurs in 1.3304025913928736% of the images.
+[07/19 19:26:55] datasets INFO: label snowboard occurs in 1.3980350977111735% of the images.
+[07/19 19:26:55] datasets INFO: label orange occurs in 1.4238422382799987% of the images.
+[07/19 19:26:55] datasets INFO: label carrot occurs in 1.4274018438756986% of the images.
+[07/19 19:26:55] datasets INFO: label fire hydrant occurs in 1.4514291816466736% of the images.
+[07/19 19:26:55] datasets INFO: label stop sign occurs in 1.4674474068273236% of the images.
+[07/19 19:26:55] datasets INFO: label mouse occurs in 1.5858042928843483% of the images.
+[07/19 19:26:55] datasets INFO: label zebra occurs in 1.6285195600327484% of the images.
+[07/19 19:26:55] datasets INFO: label broccoli occurs in 1.6418680810166233% of the images.
+[07/19 19:26:55] datasets INFO: label cow occurs in 1.6703449257822234% of the images.
+[07/19 19:26:55] datasets INFO: label keyboard occurs in 1.7878119104403232% of the images.
+[07/19 19:26:55] datasets INFO: label teddy bear occurs in 1.8109493468123732% of the images.
+[07/19 19:26:55] datasets INFO: label elephant occurs in 1.8278574733919482% of the images.
+[07/19 19:26:55] datasets INFO: label frisbee occurs in 1.8412059943758232% of the images.
+[07/19 19:26:55] datasets INFO: label banana occurs in 1.8910404727156231% of the images.
+[07/19 19:26:55] datasets INFO: label kite occurs in 1.9070586978962731% of the images.
+[07/19 19:26:55] datasets INFO: label refrigerator occurs in 1.992489232193073% of the images.
+[07/19 19:26:55] datasets INFO: label sandwich occurs in 1.998718541985548% of the images.
+[07/19 19:26:55] datasets INFO: label suitcase occurs in 2.021855978357598% of the images.
+[07/19 19:26:55] datasets INFO: label baseball bat occurs in 2.104616808457623% of the images.
+[07/19 19:26:55] datasets INFO: label wine glass occurs in 2.1446623714092476% of the images.
+[07/19 19:26:55] datasets INFO: label giraffe occurs in 2.1491118784038727% of the images.
+[07/19 19:26:55] datasets INFO: label baseball glove occurs in 2.2167443847221726% of the images.
+[07/19 19:26:55] datasets INFO: label oven occurs in 2.4329904246609475% of the images.
+[07/19 19:26:55] datasets INFO: label cake occurs in 2.4748157904104224% of the images.
+[07/19 19:26:55] datasets INFO: label horse occurs in 2.5068522407717224% of the images.
+[07/19 19:26:55] datasets INFO: label airplane occurs in 2.5237603673512976% of the images.
+[07/19 19:26:55] datasets INFO: label boat occurs in 2.5638059303029226% of the images.
+[07/19 19:26:55] datasets INFO: label skis occurs in 2.5949524792652974% of the images.
+[07/19 19:26:55] datasets INFO: label remote occurs in 2.6065211974513223% of the images.
+[07/19 19:26:55] datasets INFO: label pizza occurs in 2.6777133093653225% of the images.
+[07/19 19:26:55] datasets INFO: label bicycle occurs in 2.746235717082547% of the images.
+[07/19 19:26:55] datasets INFO: label bird occurs in 2.758694336667497% of the images.
+[07/19 19:26:55] datasets INFO: label toilet occurs in 2.840565265368597% of the images.
+[07/19 19:26:55] datasets INFO: label tennis racket occurs in 2.8717118143309723% of the images.
+[07/19 19:26:55] datasets INFO: label surfboard occurs in 2.926885701064322% of the images.
+[07/19 19:26:55] datasets INFO: label skateboard occurs in 2.939344320649272% of the images.
+[07/19 19:26:55] datasets INFO: label motorcycle occurs in 2.964261559819172% of the images.
+[07/19 19:26:55] datasets INFO: label laptop occurs in 2.968711066813797% of the images.
+[07/19 19:26:55] datasets INFO: label spoon occurs in 2.991848503185847% of the images.
+[07/19 19:26:55] datasets INFO: label fork occurs in 3.007866728366497% of the images.
+[07/19 19:26:55] datasets INFO: label vase occurs in 3.018545545153597% of the images.
+[07/19 19:26:55] datasets INFO: label train occurs in 3.024774854946072% of the images.
+[07/19 19:26:55] datasets INFO: label bed occurs in 3.124443811625672% of the images.
+[07/19 19:26:55] datasets INFO: label tie occurs in 3.231231979496672% of the images.
+[07/19 19:26:55] datasets INFO: label umbrella occurs in 3.3344605417719717% of the images.
+[07/19 19:26:55] datasets INFO: label bus occurs in 3.353148471149397% of the images.
+[07/19 19:26:55] datasets INFO: label cat occurs in 3.4501477236322216% of the images.
+[07/19 19:26:55] datasets INFO: label traffic light occurs in 3.4964225963763216% of the images.
+[07/19 19:26:55] datasets INFO: label sports ball occurs in 3.5943117502580715% of the images.
+[07/19 19:26:55] datasets INFO: label knife occurs in 3.6628341579752965% of the images.
+[07/19 19:26:55] datasets INFO: label dog occurs in 3.7055494251236962% of the images.
+[07/19 19:26:55] datasets INFO: label couch occurs in 3.7286868614957465% of the images.
+[07/19 19:26:55] datasets INFO: label potted plant occurs in 3.7838607482290962% of the images.
+[07/19 19:26:55] datasets INFO: label tv occurs in 3.833695226568896% of the images.
+[07/19 19:26:55] datasets INFO: label clock occurs in 3.961841028014096% of the images.
+[07/19 19:26:55] datasets INFO: label sink occurs in 3.971629943402271% of the images.
+[07/19 19:26:55] datasets INFO: label cell phone occurs in 4.0615099846936955% of the images.
+[07/19 19:26:55] datasets INFO: label book occurs in 4.499341472964796% of the images.
+[07/19 19:26:55] datasets INFO: label backpack occurs in 4.679101555547645% of the images.
+[07/19 19:26:55] datasets INFO: label bench occurs in 4.68889047093582% of the images.
+[07/19 19:26:55] datasets INFO: label truck occurs in 5.161428113764995% of the images.
+[07/19 19:26:55] datasets INFO: label handbag occurs in 5.793258107001744% of the images.
+[07/19 19:26:55] datasets INFO: label bowl occurs in 6.031751681913644% of the images.
+[07/19 19:26:55] datasets INFO: label bottle occurs in 7.211760936888193% of the images.
+[07/19 19:26:55] datasets INFO: label cup occurs in 7.768839212615243% of the images.
+[07/19 19:26:55] datasets INFO: label dining table occurs in 9.985583597337415% of the images.
+[07/19 19:26:55] datasets INFO: label car occurs in 10.366461396077314% of the images.
+[07/19 19:26:55] datasets INFO: label chair occurs in 10.76424732139679% of the images.
+[07/19 19:26:55] datasets INFO: label person occurs in 54.17363756095825% of the images.
