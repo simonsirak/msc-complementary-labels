@@ -287,6 +287,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 from detectron2.data import build_detection_train_loader
 from util.augmentor import DummyAlbuMapper
 from detectron2.utils.events import EventStorage
+from detectron2.utils.events import TensorboardXWriter
 def sample_experiment(args, dataset, nb_samples=3):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.sample")
   main_label = args.main_label
@@ -323,6 +324,10 @@ def sample_experiment(args, dataset, nb_samples=3):
     for data, iteration in zip(data_loader, range(0, nb_samples)): 
       storage.iter = iteration
       save_sample(cfg, model, data[0], f"../../samples/sample{iteration}.jpg", storage=storage)
+      comm.synchronize()
+    if comm.is_main_process():
+      TensorboardXWriter(cfg.OUTPUT_DIR)
+    comm.synchronize()
 
 # TODO: lr should be found separately, who cares which subset in particular is used;
 # just do a grid search for all of the configurations (#labels, #data)
