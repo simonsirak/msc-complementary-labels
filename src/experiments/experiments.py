@@ -326,7 +326,7 @@ def sample_experiment(args, dataset, nb_samples=3):
       save_sample(cfg, model, data[0], f"../../samples/sample{iteration}.jpg", storage=storage)
       comm.synchronize()
     if comm.is_main_process():
-      TensorboardXWriter(cfg.OUTPUT_DIR)
+      TensorboardXWriter(cfg.OUTPUT_DIR).write()
     comm.synchronize()
 
 # TODO: lr should be found separately, who cares which subset in particular is used;

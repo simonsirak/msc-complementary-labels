@@ -27,10 +27,8 @@ def save_sample(cfg, model, data_dict, dst_path, show=False, storage=None):
     else:
       cv2.imwrite(dst_path, out.get_image()[:,:,::-1]) # flip final image to BGR again because cv2 wants that lol
 
-    if comm.is_main_process():
-      if storage is not None:
-        storage.put_image('sample', out.get_image().transpose(2,0,1)) # C H W, RGB
-    comm.synchronize()
+    if storage is not None:
+      storage.put_image('sample', out.get_image().transpose(2,0,1)) # C H W, RGB
 
 import os 
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
