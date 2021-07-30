@@ -303,6 +303,7 @@ def sample_experiment(args, dataset, nb_samples=5):
   cfg = setup_config(args, dataset, ds, 10)
   cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
   cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5 # friendlier visualizations
+  cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.5 # friendlier visualizations
   logger.info(f'Configuration used: {cfg}')
   
   model = build_model(cfg)
