@@ -293,25 +293,28 @@ def sample_experiment(args, dataset, nb_samples=3):
 
   # no complementaries, should be identical across all processes since seed is set just before this
   if comm.is_main_process():
-    ds, _ = dataset.subset(args.dataset + "_sample", nb_comp_labels=0)
+    ds, _ = dataset.subset(args.dataset + "_sample", nb_comp_labels=args.num_comp_labels)
   
   comm.synchronize()
   ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
       
   cfg = setup_config(args, dataset, ds, 10)
+  cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
   logger.info(f'Configuration used: {cfg}')
-
+  
   model = build_model(cfg)
   distributed = comm.get_world_size() > 1
   if distributed:
       model = DistributedDataParallel(
           model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
       )
-      
+
+  DetectionCheckpointer(model).load(args.weights_path)
+    
   data_loader = build_detection_train_loader(
       dataset=DatasetCatalog.get(cfg.DATASETS.TEST[1]), 
       mapper=DatasetMapper(cfg,False), #DummyAlbuMapper(cfg, is_train=True),
-      total_batch_size=1,
+      total_batch_size=args.num_gpus,
       num_workers=cfg.DATALOADER.NUM_WORKERS
     )
   
