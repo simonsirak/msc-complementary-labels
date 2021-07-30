@@ -288,7 +288,8 @@ from detectron2.data import build_detection_train_loader
 from util.augmentor import DummyAlbuMapper
 from detectron2.utils.events import EventStorage
 from detectron2.utils.events import TensorboardXWriter
-def sample_experiment(args, dataset, nb_samples=3):
+
+def sample_experiment(args, dataset, nb_samples=5):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.sample")
   main_label = args.main_label
 
@@ -301,6 +302,7 @@ def sample_experiment(args, dataset, nb_samples=3):
       
   cfg = setup_config(args, dataset, ds, 10)
   cfg.OUTPUT_DIR = cfg.BASE_OUTPUT_DIR
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5 # friendlier visualizations
   logger.info(f'Configuration used: {cfg}')
   
   model = build_model(cfg)
