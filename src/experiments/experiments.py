@@ -286,6 +286,7 @@ def vary_labels_experiment(args, dataset, sizes, training_size=200):
 
 from detectron2.data import build_detection_train_loader
 from util.augmentor import DummyAlbuMapper
+from detectron2.utils.events import EventStorage
 def sample_experiment(args, dataset, nb_samples=3):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.sample")
   main_label = args.main_label
@@ -297,10 +298,8 @@ def sample_experiment(args, dataset, nb_samples=3):
   comm.synchronize()
   ds, _ = dataset.from_json() # multiple processes can access file no problem since it is read-only
       
-  cfg = setup_config(args, dataset, ds, training_size)
-  cfg.TEST.EVAL_PERIOD = 0
+  cfg = setup_config(args, dataset, ds, 10)
   logger.info(f'Configuration used: {cfg}')
-  cfg.TEST.EVAL_PERIOD = max(150, int(5 * cfg.SOLVER.ITERS_PER_EPOCH)) # TODO: Fix this when re-adding early stopping
 
   model = build_model(cfg)
   distributed = comm.get_world_size() > 1
@@ -310,15 +309,17 @@ def sample_experiment(args, dataset, nb_samples=3):
       )
       
   data_loader = build_detection_train_loader(
-      dataset=DatasetCatalog.get(cfg.DATASETS.TRAIN[0]), 
+      dataset=DatasetCatalog.get(cfg.DATASETS.TEST[1]), 
       mapper=DatasetMapper(cfg,False), #DummyAlbuMapper(cfg, is_train=True),
-      total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+      total_batch_size=1,
       num_workers=cfg.DATALOADER.NUM_WORKERS
     )
   
   model.eval()
-  for data, iteration in zip(data_loader, range(0, nb_samples)): 
-    save_sample(cfg, model, data[0], f"../../samples/sample{iteration}.jpg")
+  with EventStorage(0) as storage:
+    for data, iteration in zip(data_loader, range(0, nb_samples)): 
+      storage.iter = iteration
+      save_sample(cfg, model, data[0], f"../../samples/sample{iteration}.jpg", storage=storage)
 
 # TODO: lr should be found separately, who cares which subset in particular is used;
 # just do a grid search for all of the configurations (#labels, #data)
