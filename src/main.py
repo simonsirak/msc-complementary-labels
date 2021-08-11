@@ -71,7 +71,7 @@ def main(args):
   if args.vary_data:
     seed_all_rng(None if base_cfg.SEED < 0 else base_cfg.SEED + rank)
     main_logger.info("Entering vary data experiment...")
-    sizes = [5, 10, 25, 50, 100, 200] if dataset_name == "CSAW-S" else [64, 128, 512, 1024, 2048]
+    sizes = [5, 10, 25, 50, 100, 200] if dataset_name == "CSAW-S" else [200, 300, 400]
     # natural domains get slightly higher regimes overall, 
     # to accomodate for possibility of getting no main label 
     # in an image
