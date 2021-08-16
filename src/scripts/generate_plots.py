@@ -215,6 +215,7 @@ def bar(labels, data, main_label, args):
 
 
   means = np.mean(np.asarray(ys), axis=1)
+  print("MEANS", means[1] - means[0])
   ys_array = [np.asarray(y) for y in ys]
   ci = mean_confidence_interval(ys, confidence=0.95)
   print(ci.shape)
@@ -233,6 +234,8 @@ def bar(labels, data, main_label, args):
     "capsize": 10,
     "color": ["tab:blue", "tab:orange"],
     "zorder": 2})
+
+  ax.set_yticks(list(ax.get_yticks()) + means.tolist())
 
   ax.set_ylabel('AP')
   ax.set_title(f"{args.experiment}, {args.dataset}")
@@ -334,7 +337,7 @@ def main(args):
       graph([data_x, data_x_zero], [data, data_zero], main_label, args)
 
   elif args.plot == "differential":
-    labels = [path.split('/')[-1].split('.')[0].split('-')[-1] for path in paths]
+    labels = [' '.join('-'.join(path.split('/')[-1].split('.')[0].split('-')[2:]).split('_')) for path in paths]
     if args.experiment in ["loo", "vary-data"]:
       with open(os.path.join(result_path, f"metrics-base-all.json"), 'r') as fr:
         data.append(json.load(fr)) # in other words, data with all labels is last index
