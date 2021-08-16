@@ -289,7 +289,7 @@ from util.augmentor import DummyAlbuMapper
 from detectron2.utils.events import EventStorage
 from detectron2.utils.events import TensorboardXWriter
 
-def sample_experiment(args, dataset, nb_samples=5):
+def sample_experiment(args, dataset, nb_samples=1000):
   logger = setup_logger(output=args.output_dir, distributed_rank=comm.get_rank(), name="experiments.sample")
   main_label = args.main_label
 
