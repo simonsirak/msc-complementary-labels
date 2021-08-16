@@ -18,6 +18,7 @@ def save_sample(cfg, model, data_dict, dst_path, show=False, storage=None):
     v = Visualizer(img.permute(1,2,0).numpy()[:,:,::-1], # = img[:,:,::-1] in numpy
         metadata=MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), 
         scale=1)
+    out = v.draw_dataset_dict(data_dict)
     out = v.draw_instance_predictions(outputs[0]["instances"].to("cpu"))
 
     if show:
